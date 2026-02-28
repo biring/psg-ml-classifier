@@ -1,0 +1,16 @@
+# Sleep Stage Classification Project Requirements
+
+# To install the required packages, run:
+# pip install -r requirements.txt
+
+# Scientific Computing & Data Handling
+numpy
+pandas
+matplotlib
+pyarrow
+
+# Specialized Sleep Data Handling
+mne
+
+# Machine Learning
+scikit-learn

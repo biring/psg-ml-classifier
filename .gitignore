@@ -1,0 +1,29 @@
+# -- Ignore datasets and intermediate files ---
+data/epoch_tables/
+data/physionet-sleep-data/
+
+# -- Ignore Python cache and virtual environment files ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+
+# -- Ignore Jupyter Notebook checkpoints and VSCode settings ---
+.ipynb_checkpoints/
+
+# --- Ignore OS-specific and editor-specific files ---
+.DS_Store
+Thumbs.db
+.vscode/
+
+# --- Ignore reports and artifacts ---
+data/reports/
+
+# --- Ignore planning documents ---
+project_guidelines.md
+workflow.md
