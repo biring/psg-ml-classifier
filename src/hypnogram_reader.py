@@ -5,7 +5,7 @@ loading and working with hypnogram/annotation files commonly used in sleep
 research. The class wraps ``mne.Annotations`` to extract stage descriptions,
 onset times, and durations and supplies convenient helpers for remapping
 stage labels to integer codes and building data suitable for step-style
-visualisation (hypnograms).
+visualization (hypnograms).
 
 Key features
 ------------
@@ -15,6 +15,11 @@ Key features
     appearance order.
 - Build time/value arrays ready for step plotting (start/end points per
     annotation).
+
+Exports
+-------
+- ``HypnogramData``: dataclass containing ``times``, ``vals``, and
+    ``unique_labels`` ready for plotting.
 
 Notes
 -----
@@ -29,15 +34,27 @@ Example
 >>> times, vals, labels = reader.get_hypnogram_data()
 >>> # then use plotting.plot_hypnogram_from_annotations(times=times, vals=vals, unique_labels=labels)
 
-Dependencies: mne, pathlib
+Dependencies
+------------
+- mne
+- pathlib
+- dataclasses (stdlib; used for ``HypnogramData``)
 """
 
 from __future__ import annotations
+from dataclasses import dataclass
 
 
 import mne
 
 from pathlib import Path
+
+
+@dataclass(frozen=True)
+class HypnogramData:
+    times: tuple[float, ...]
+    vals: tuple[int, ...]
+    unique_labels: tuple[str, ...]
 
 
 class HypnogramReader:
@@ -228,7 +245,9 @@ class HypnogramReader:
             times.extend([o, o + d])
             vals.extend([label_to_int[s], label_to_int[s]])
 
-        return tuple(times), tuple(vals), tuple(unique_labels)
+        return HypnogramData(
+            times=tuple(times), vals=tuple(vals), unique_labels=tuple(unique_labels)
+        )
 
 
 if __name__ == "__main__":
@@ -248,14 +267,14 @@ if __name__ == "__main__":
     print("Stage to int mapping:", hyp_data.stage_mapping)
 
     # Plot hypnogram
-    times, vals, unique_labels = hyp_data.get_hypnogram_data()
-    print("Times for plotting:", times)
-    print("Values for plotting:", vals)
-    print("Unique labels for plotting:", unique_labels)
+    hypnogram_data = hyp_data.get_hypnogram_data()
+    print("Times for plotting:", hypnogram_data.times)
+    print("Values for plotting:", hypnogram_data.vals)
+    print("Unique labels for plotting:", hypnogram_data.unique_labels)
     plot.plot_hypnogram_from_annotations(
-        times=times,
-        vals=vals,
-        unique_labels=unique_labels,
+        times=hypnogram_data.times,
+        vals=hypnogram_data.vals,
+        unique_labels=hypnogram_data.unique_labels,
         subject="Example Subject",
         xlim_s=(25000, 50000),
     )
