@@ -1,8 +1,8 @@
 """PSG (Polysomnography) reader utilities.
 
-This module contains :class:`PsgReader`, a thin wrapper around MNE-Python
-utilities for reading EDF-formatted PSG recordings and exposing commonly
-used metadata and per-channel signal access in a project-friendly form.
+This module provides ``PsgReader``, a thin wrapper around MNE-Python for
+reading EDF-formatted PSG recordings, and the ``ChannelData`` dataclass used
+to return per-channel signal data together with useful metadata.
 
 Features
 --------
@@ -12,18 +12,35 @@ Features
     records) and derived values such as per-channel sampling rates and total
     sample counts.
 - Provide a convenience method, :meth:`get_channel_data`, that returns a
-    time axis, the channel signal, human-readable labels, and a scaling
-    factor suitable for plotting.
+    ``ChannelData`` object containing a time axis, the channel signal, human-
+    readable labels, a plotting scale factor, and the channel sampling rate.
+
+Exports
+-------
+- ``ChannelData``: immutable dataclass with fields ``x_label``, ``x``,
+    ``y_label``, ``y``, ``y_scale_factor``, and ``sampling_rate``.
 
 Behavior notes
 --------------
 - Methods raise ``ValueError`` when required EDF header fields are missing
     or malformed; callers should catch these for robust pipelines.
 - The reader intentionally does not preload signal data (``preload=False``)
-    to avoid large memory usage; :meth:`get_channel_data` retrieves channel
-    data on demand via the underlying MNE ``Raw`` object.
+    to avoid large memory usage. :meth:`get_channel_data` reads channel data on
+    demand from the underlying MNE ``Raw`` object and computes a time axis and
+    scale factor suitable for plotting.
 
-Dependencies: mne, numpy, pathlib
+Dependencies
+------------
+- mne
+- numpy
+- pathlib
+- attrs (used for the ``ChannelData`` dataclass)
+
+Example
+-------
+The module includes a small ``if __name__ == "__main__"`` usage example that
+demonstrates reading an EDF file and plotting a channel via the project's
+``folders`` and ``plotters`` helpers.
 """
 
 from __future__ import annotations
@@ -32,6 +49,22 @@ import warnings
 import mne
 import numpy as np
 from pathlib import Path
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ChannelData:
+    # Time axis
+    x_label: str
+    x_data: np.ndarray  # time (seconds)
+
+    # Signal axis
+    y_label: str
+    y_data: np.ndarray  # signal (raw or filtered)
+
+    # Metadata
+    y_scale_factor: float  # for plotting units (e.g., µV)
+    sampling_rate: float  # Hz
 
 
 class PsgReader:
@@ -487,9 +520,7 @@ class PsgReader:
 
         return tuple(out)
 
-    def get_channel_data(
-        self, channel: str
-    ) -> tuple[str, np.ndarray, str, np.ndarray, float]:
+    def get_channel_data(self, channel: str) -> ChannelData:
         """
         Retrieve time and signal data for a specific channel.
 
@@ -499,12 +530,13 @@ class PsgReader:
             channel (str): Name of the channel to retrieve data for.
 
         Returns:
-            tuple[str, np.ndarray, str, np.ndarray, float]: A tuple containing:
+            ChannelData: A dataclass containing channel data and metadata.
                 - x_label (str): Label for time axis with units
                 - x_data (np.ndarray): Time values in seconds
                 - y_label (str): Label for signal axis with units
                 - y_data (np.ndarray): Signal values
                 - y_scale_factor (float): Scale factor for the signal
+                - sampling_rate (float): Sampling rate for the channel
 
         Raises:
             ValueError: If the channel name is not found or index is out of range.
@@ -544,7 +576,14 @@ class PsgReader:
         y_scale: float = self.channel_scale[channel_index]
         y_scale_factor: float = 1 / y_scale if y_scale != 0 else 1.0
 
-        return x_label, x_data, y_label, y_data, y_scale_factor
+        return ChannelData(
+            x_label=x_label,
+            x_data=x_data,
+            y_label=y_label,
+            y_data=y_data,
+            y_scale_factor=y_scale_factor,
+            sampling_rate=freq,
+        )
 
 
 if __name__ == "__main__":
@@ -569,13 +608,13 @@ if __name__ == "__main__":
 
     # Plot one channel's data
     channel: str = "EEG Fpz-Cz"  # any channel index
-    x_label, x_data, y_label, y_data, y_scale = edf_data.get_channel_data(channel)
+    channel_data = edf_data.get_channel_data(channel)
     plot.plot_signal(
-        x_data=x_data,
-        y_data=y_data,
-        x_label=x_label,
-        y_label="µV",
-        y_scale=y_scale,
+        x_data=channel_data.x_data,
+        y_data=channel_data.y_data,
+        x_label=channel_data.x_label,
+        y_label="uV",
+        y_scale=channel_data.y_scale_factor,
         title=f"PSG Signal for channel {channel}",
         xlim_s=(0, 60),  # show only the first minute for clarity
     )
