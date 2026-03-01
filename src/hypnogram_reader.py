@@ -1,48 +1,38 @@
 """Hypnogram reader utilities.
 
-This module provides a small helper class, :class:`HypnogramReader`, for
-loading and working with hypnogram/annotation files commonly used in sleep
-research. The class wraps ``mne.Annotations`` to extract stage descriptions,
-onset times, and durations and supplies convenient helpers for remapping
-stage labels to integer codes and building data suitable for step-style
-visualization (hypnograms).
+Utilities for loading and converting hypnogram/annotation files used in
+sleep research. The primary class, :class:`HypnogramReader`, reads
+MNE-compatible annotations and produces plotting-friendly, step-style
+hypnogram data via the :class:`HypnogramData` dataclass.
 
 Key features
 ------------
-- Read annotations from a file using :func:`mne.read_annotations`.
-- Expose ordered stage descriptions, onsets, and durations as tuples.
-- Provide a stable mapping from stage labels to integers preserving first
-    appearance order.
-- Build time/value arrays ready for step plotting (start/end points per
-    annotation).
+- Read annotations using ``mne.read_annotations``.
+- Extract descriptions, onsets, and durations from annotations.
+- Preserve first-appearance order when mapping labels to integers.
+- Optionally remap labels (e.g., combine stages) via ``MapppingConfig``.
 
-Exports
--------
-- ``HypnogramData``: dataclass containing ``times``, ``vals``, and
-    ``unique_labels`` ready for plotting.
+Public API
+----------
+- ``HypnogramData``: dataclass with ``times``, ``vals``, and
+  ``unique_labels`` for plotting.
+- ``HypnogramReader``: loads annotations and converts them to
+  ``HypnogramData``.
 
 Notes
 -----
-- This module expects annotation files readable by MNE. If a different
-    format is required, extend ``HypnogramReader._get_annotation``.
-- Methods raise ``RuntimeError`` when required annotation fields are
-    missing or malformed.
+- This module expects files readable by MNE. To support other formats,
+  override ``HypnogramReader._get_annotation``.
+- Methods raise ``RuntimeError`` for missing or malformed annotation data.
 
 Example
 -------
->>> reader = HypnogramReader('subjectX-hypnogram.edf')
->>> times, vals, labels = reader.get_hypnogram_data()
->>> # then use plotting.plot_hypnogram_from_annotations(times=times, vals=vals, unique_labels=labels)
-
-Dependencies
-------------
-- mne
-- pathlib
-- dataclasses (stdlib; used for ``HypnogramData``)
+>>> reader = HypnogramReader('subj-hypnogram.edf')
+>>> data = reader.get_hypnogram_data(remap=MapppingConfig(enabled=False, remap={}))
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 import mne
@@ -55,6 +45,14 @@ class HypnogramData:
     times: tuple[float, ...]
     vals: tuple[int, ...]
     unique_labels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class MapppingConfig:
+    enabled: bool = False
+    remap: dict[str, str] = field(
+        default_factory=dict
+    )  # e.g., {"N1": "Light sleep", "N2": "Light sleep", ...}
 
 
 class HypnogramReader:
@@ -219,9 +217,54 @@ class HypnogramReader:
         """
         return {stage: i for i, stage in enumerate(self.unique_stages)}
 
+    def _apply_remap_and_validate(
+        self, remap: MapppingConfig | None
+    ) -> tuple[list[str], tuple[str, ...], dict[str, int]]:
+        """
+        Validate a remapping configuration and produce remapped descriptions,
+        the unique mapped labels (preserving order), and a new label->int map.
+
+        Validation rules:
+        - If ``remap`` is None or ``remap.enabled`` is False, the original
+          descriptions and mapping are returned unchanged.
+        - The remap dictionary must contain exactly the set of unique raw
+          stage labels (no missing or unknown keys).
+        - Mapped values must be non-empty strings.
+
+        Raises ValueError on invalid remap config.
+        """
+        raw_unique = set(self.unique_stages)
+        remap_keys = set(remap.remap.keys())
+
+        missing = raw_unique - remap_keys
+        extra = remap_keys - raw_unique
+        if missing or extra:
+            parts = []
+            if missing:
+                parts.append(f"missing mappings for raw labels: {sorted(missing)}")
+            if extra:
+                parts.append(f"unknown remap keys: {sorted(extra)}")
+            raise ValueError("Invalid remap config: " + "; ".join(parts))
+
+        # Apply remap to each description in original order
+        mapped_descriptions: list[str] = [remap.remap[d] for d in self.descriptions]
+
+        # Ensure mapped values are non-empty strings
+        if any((not isinstance(v, str) or v == "") for v in mapped_descriptions):
+            raise ValueError("Mapped labels must be non-empty strings")
+
+        # Preserve first-appearance order for the new unique labels
+        mapped_unique: tuple[str, ...] = tuple(dict.fromkeys(mapped_descriptions))
+
+        new_mapping: dict[str, int] = {lab: i for i, lab in enumerate(mapped_unique)}
+
+        return mapped_descriptions, mapped_unique, new_mapping
+
     def get_hypnogram_data(
         self,
-    ) -> tuple[tuple[float, ...], tuple[int, ...], tuple[str, ...]]:
+        *,
+        remap: MapppingConfig,
+    ) -> HypnogramData:
         """
         Build step-plot data from hypnogram annotations.
 
@@ -229,24 +272,32 @@ class HypnogramReader:
         suitable for step-plot visualization.
 
         Returns:
-            tuple: A 3-tuple containing:
-                - times (tuple[float, ...]): X-coordinates (seconds) for step plot.
-                - vals (tuple[int, ...]): Y-coordinates (integer stage codes).
-                - unique_labels (tuple[str, ...]): Unique stage labels for legend.
+            HypnogramData: Data class containing times, stage codes, and unique labels for step-plot visualization.
         """
+        if not isinstance(remap, MapppingConfig):
+            raise TypeError("remap must be an instance of MapppingConfig")
+
+        if remap.enabled:
+            # Apply remapping to hypno labels (validates remap covers raw labels)
+            mapped_descriptions, mapped_unique, label_to_int = (
+                self._apply_remap_and_validate(remap)
+            )
+        else:
+            mapped_descriptions = tuple(self.descriptions)
+            mapped_unique = tuple(self.unique_stages)
+            label_to_int = self.stage_mapping
+
         times: list[float] = []
         vals: list[int] = []
-        unique_labels: list[str] = list(self.unique_stages)
-        label_to_int: dict[str, int] = self.stage_mapping
 
         # For each annotation, add two points to create step-plot effect
-        for o, d, s in zip(self.onsets, self.durations, self.descriptions):
+        for o, d, s in zip(self.onsets, self.durations, mapped_descriptions):
             # Add start and end time with constant value
             times.extend([o, o + d])
             vals.extend([label_to_int[s], label_to_int[s]])
 
         return HypnogramData(
-            times=tuple(times), vals=tuple(vals), unique_labels=tuple(unique_labels)
+            times=tuple(times), vals=tuple(vals), unique_labels=tuple(mapped_unique)
         )
 
 
@@ -266,8 +317,42 @@ if __name__ == "__main__":
     print("Unique stages:", hyp_data.unique_stages)
     print("Stage to int mapping:", hyp_data.stage_mapping)
 
-    # Plot hypnogram
-    hypnogram_data = hyp_data.get_hypnogram_data()
+    # Plot default hypnogram
+    map_config = MapppingConfig(
+        enabled=False,
+        remap={},  # no remapping; use original labels},
+    )
+    hypnogram_data = hyp_data.get_hypnogram_data(
+        remap=map_config,
+    )
+    print("Times for plotting:", hypnogram_data.times)
+    print("Values for plotting:", hypnogram_data.vals)
+    print("Unique labels for plotting:", hypnogram_data.unique_labels)
+    plot.plot_hypnogram_from_annotations(
+        times=hypnogram_data.times,
+        vals=hypnogram_data.vals,
+        unique_labels=hypnogram_data.unique_labels,
+        subject="Example Subject",
+        xlim_s=(25000, 50000),
+    )
+
+    # Plot remapped hypnogram (e.g., combine N1 and N2 into "Light sleep")
+    remap_config = MapppingConfig(
+        enabled=True,
+        remap={
+            "Sleep stage W": "Wake",
+            "Sleep stage 1": "Sleep",
+            "Sleep stage 2": "Sleep",
+            "Sleep stage 3": "Sleep",
+            "Sleep stage 4": "Sleep",
+            "Sleep stage R": "Sleep",
+            "Sleep stage ?": "Invalid",
+            "Movement time": "Invalid",
+        },
+    )
+    hypnogram_data = hyp_data.get_hypnogram_data(
+        remap=remap_config,
+    )
     print("Times for plotting:", hypnogram_data.times)
     print("Values for plotting:", hypnogram_data.vals)
     print("Unique labels for plotting:", hypnogram_data.unique_labels)
