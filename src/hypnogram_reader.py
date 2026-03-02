@@ -1,39 +1,34 @@
 """Hypnogram reader utilities.
 
-Utilities for loading and converting hypnogram/annotation files used in
-sleep research. The primary class, :class:`HypnogramReader`, reads
-MNE-compatible annotations and produces plotting-friendly, step-style
-hypnogram data via the :class:`HypnogramData` dataclass.
+This module provides utilities to load and convert hypnogram (sleep
+stage annotation) files into a compact, plotting-friendly representation.
 
-Key features
-------------
+Main components
+---------------
+- ``HypnogramReader``: reads MNE-compatible annotation files and extracts
+    onsets, durations, and stage descriptions.
+- ``HypnogramData``: immutable dataclass containing ``times``, ``vals``,
+    ``unique_labels``, ``start_time``, and ``recording_duration`` for step
+    plot visualization.
+- ``MapppingConfig``: configuration dataclass for optional label remapping.
+
+Features
+--------
 - Read annotations using ``mne.read_annotations``.
-- Extract descriptions, onsets, and durations from annotations.
-- Preserve first-appearance order when mapping labels to integers.
-- Optionally remap labels (e.g., combine stages) via ``MapppingConfig``.
-
-Public API
-----------
-- ``HypnogramData``: dataclass with ``times``, ``vals``, and
-  ``unique_labels`` for plotting.
-- ``HypnogramReader``: loads annotations and converts them to
-  ``HypnogramData``.
+- Preserve the order of first appearance when mapping labels to integers.
+- Optional label remapping via ``MapppingConfig``.
+- Validate remapping configurations and ensure data consistency.
 
 Notes
 -----
-- This module expects files readable by MNE. To support other formats,
-  override ``HypnogramReader._get_annotation``.
-- Methods raise ``RuntimeError`` for missing or malformed annotation data.
-
-Example
--------
->>> reader = HypnogramReader('subj-hypnogram.edf')
->>> data = reader.get_hypnogram_data(remap=MapppingConfig(enabled=False, remap={}))
+- To support non-MNE formats, override ``HypnogramReader._get_annotation``.
+- Methods raise ``RuntimeError`` when annotation data are missing or invalid.
+- Methods raise ``ValueError`` when configuration or remapping is invalid.
 """
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-
+from typing import Optional, Sequence
 
 import mne
 
@@ -45,6 +40,8 @@ class HypnogramData:
     times: tuple[float, ...]
     vals: tuple[int, ...]
     unique_labels: tuple[str, ...]
+    start_time: float
+    recording_duration: float
 
 
 @dataclass(frozen=True)
@@ -95,6 +92,8 @@ class HypnogramReader:
         self.onsets: tuple[float, ...] = self._get_onset()
         self.durations: tuple[float, ...] = self._get_duration()
         self.descriptions: tuple[str, ...] = self._get_description()
+        self.start_time: float = self.onsets[0] if self.onsets else 0.0
+        self.recording_duration: float = self._calculate_recording_duration()
         self.unique_stages: tuple[str, ...] = self._get_unique_stages()
         self.stage_mapping: dict[str, int] = self._get_stage_to_int_mapping()
 
@@ -151,13 +150,15 @@ class HypnogramReader:
         if getattr(self, "annotations", None) is None:
             raise RuntimeError("No annotations available to extract onsets.")
         onsets = self.annotations.onset
+
         if onsets is None:
             raise RuntimeError("Annotations do not contain onsets.")
         if onsets.ndim != 1:
             raise RuntimeError(f"Expected 1D onsets array, got shape {onsets.shape}.")
         if (onsets < 0).any():
             raise RuntimeError("Onsets cannot be negative.")
-        return tuple(self.annotations.onset)
+
+        return tuple(onsets)
 
     def _get_duration(self) -> tuple[float, ...]:
         """
@@ -171,6 +172,7 @@ class HypnogramReader:
         """
         if getattr(self, "annotations", None) is None:
             raise RuntimeError("No annotations available to extract durations.")
+
         return tuple(self.annotations.duration)
 
     def _get_description(self) -> tuple[str, ...]:
@@ -185,7 +187,36 @@ class HypnogramReader:
         """
         if getattr(self, "annotations", None) is None:
             raise RuntimeError("No annotations available to extract descriptions.")
+
         return tuple(self.annotations.description)
+
+    def _calculate_recording_duration(self) -> float:
+        """
+        Calculate the total recording duration from annotations.
+
+        Computes the duration from the first annotation onset to the end of
+        the last annotation (last onset + last duration).
+
+        Returns:
+            float: Total recording duration in seconds.
+
+        Raises:
+            RuntimeError: If onsets or durations are not available, or if the
+                calculated duration is negative.
+        """
+        if not hasattr(self, "onsets") or not hasattr(self, "durations"):
+            raise RuntimeError(
+                "Onsets or durations are not available to calculate recording duration."
+            )
+
+        recording_duration: float = (
+            self.onsets[-1] + self.durations[-1] - self.onsets[0]
+        )
+
+        if recording_duration < 0:
+            raise RuntimeError("Calculated recording duration cannot be negative.")
+
+        return recording_duration
 
     def _get_unique_stages(self) -> tuple[str, ...]:
         """
@@ -201,8 +232,9 @@ class HypnogramReader:
         """
         # Use dict.fromkeys to preserve insertion order while removing duplicates
         stages: list[str] = list(dict.fromkeys(self.descriptions))
-        if len(stages) == 0:
+        if not stages:
             raise RuntimeError("No stage descriptions found in annotations.")
+
         return tuple(stages)
 
     def _get_stage_to_int_mapping(self) -> dict[str, int]:
@@ -218,20 +250,32 @@ class HypnogramReader:
         return {stage: i for i, stage in enumerate(self.unique_stages)}
 
     def _apply_remap_and_validate(
-        self, remap: MapppingConfig | None
-    ) -> tuple[list[str], tuple[str, ...], dict[str, int]]:
+        self, remap: MapppingConfig
+    ) -> tuple[tuple[str, ...], tuple[str, ...], dict[str, int]]:
         """
-        Validate a remapping configuration and produce remapped descriptions,
-        the unique mapped labels (preserving order), and a new label->int map.
+        Apply remapping to stage descriptions and validate the configuration.
 
-        Validation rules:
-        - If ``remap`` is None or ``remap.enabled`` is False, the original
-          descriptions and mapping are returned unchanged.
-        - The remap dictionary must contain exactly the set of unique raw
-          stage labels (no missing or unknown keys).
-        - Mapped values must be non-empty strings.
+        Transforms original stage descriptions using the provided remap dictionary,
+        preserves the order of first appearance for mapped labels, and generates
+        a new label-to-integer mapping.
 
-        Raises ValueError on invalid remap config.
+        Args:
+            remap (MapppingConfig): Configuration containing the remapping dictionary.
+                Must have a ``remap`` attribute with entries for all unique stages.
+
+        Returns:
+            tuple: A 3-tuple containing:
+                - mapped_descriptions (tuple[str, ...]): Remapped stage labels
+                  in the same order as original descriptions.
+                - mapped_unique (tuple[str, ...]): Unique remapped labels
+                  preserving order of first appearance.
+                - new_mapping (dict[str, int]): Mapping from remapped labels
+                  to sequential integer codes.
+
+        Raises:
+            ValueError: If the remap dictionary has missing entries for any
+                unique stage label, contains unknown keys not in the original
+                stages, or maps to non-empty strings.
         """
         raw_unique = set(self.unique_stages)
         remap_keys = set(remap.remap.keys())
@@ -239,15 +283,17 @@ class HypnogramReader:
         missing = raw_unique - remap_keys
         extra = remap_keys - raw_unique
         if missing or extra:
-            parts = []
+            parts: list[str] = []
             if missing:
                 parts.append(f"missing mappings for raw labels: {sorted(missing)}")
             if extra:
                 parts.append(f"unknown remap keys: {sorted(extra)}")
             raise ValueError("Invalid remap config: " + "; ".join(parts))
 
-        # Apply remap to each description in original order
-        mapped_descriptions: list[str] = [remap.remap[d] for d in self.descriptions]
+        # Map each original description to its new label
+        mapped_descriptions: tuple[str, ...] = tuple(
+            remap.remap[d] for d in self.descriptions
+        )
 
         # Ensure mapped values are non-empty strings
         if any((not isinstance(v, str) or v == "") for v in mapped_descriptions):
@@ -269,10 +315,25 @@ class HypnogramReader:
         Build step-plot data from hypnogram annotations.
 
         Creates x-coordinates (times), y-coordinates (stage codes), and labels
-        suitable for step-plot visualization.
+        suitable for step-plot visualization. Optionally applies label remapping
+        based on the provided configuration.
+
+        Args:
+            remap (MapppingConfig): Configuration for optional label remapping.
+                If ``remap.enabled`` is True, labels are remapped according to
+                ``remap.remap`` dictionary. If False, original labels are used.
 
         Returns:
-            HypnogramData: Data class containing times, stage codes, and unique labels for step-plot visualization.
+            HypnogramData: Immutable data class containing:
+                - times: x-coordinates for step-plot (onset and offset of each stage)
+                - vals: y-coordinates (integer codes for each stage)
+                - unique_labels: unique stage labels in order of appearance
+                - start_time: recording start time (first onset)
+                - recording_duration: total recording duration
+
+        Raises:
+            TypeError: If remap is not a MapppingConfig instance.
+            ValueError: If remap.enabled is True but remap configuration is invalid.
         """
         if not isinstance(remap, MapppingConfig):
             raise TypeError("remap must be an instance of MapppingConfig")
@@ -290,14 +351,19 @@ class HypnogramReader:
         times: list[float] = []
         vals: list[int] = []
 
-        # For each annotation, add two points to create step-plot effect
-        for o, d, s in zip(self.onsets, self.durations, mapped_descriptions):
-            # Add start and end time with constant value
-            times.extend([o, o + d])
-            vals.extend([label_to_int[s], label_to_int[s]])
+        # For each annotation, append start and end points to create steps
+        for onset, dur, stage_label in zip(
+            self.onsets, self.durations, mapped_descriptions
+        ):
+            times.extend([onset, onset + dur])
+            vals.extend([label_to_int[stage_label], label_to_int[stage_label]])
 
         return HypnogramData(
-            times=tuple(times), vals=tuple(vals), unique_labels=tuple(mapped_unique)
+            times=tuple(times),
+            vals=tuple(vals),
+            unique_labels=tuple(mapped_unique),
+            start_time=self.start_time,
+            recording_duration=self.recording_duration,
         )
 
 
@@ -314,6 +380,8 @@ if __name__ == "__main__":
     print("Onsets:", hyp_data.onsets)
     print("Durations:", hyp_data.durations)
     print("Descriptions:", hyp_data.descriptions)
+    print("Start time:", hyp_data.start_time)
+    print("Recording duration:", hyp_data.recording_duration)
     print("Unique stages:", hyp_data.unique_stages)
     print("Stage to int mapping:", hyp_data.stage_mapping)
 
