@@ -1,220 +1,236 @@
-"""
-Lightweight plotting helpers for PSG signals and hypnograms.
+"""plotters — lightweight plotting helpers for PSG and hypnograms.
 
-This module provides convenience functions to visualize polysomnography (PSG)
-signals and associated hypnograms. The helpers produce Matplotlib figures
-and display them interactively; they are small wrappers around common
-plotting patterns used across the project.
+Small utilities for visualizing polysomnography (PSG) time-series and
+hypnograms used across the project. These are concise wrappers around
+Matplotlib for common plotting patterns and quick interactive inspection.
+
+Key functions
+-------------
+- ``plot_signal``: plot a single 1D signal with optional scaling and labels.
+- ``plot_hypnogram_from_annotations``: draw a hypnogram from annotation times/values.
+- ``plot_psg_with_hypnogram_arrays``: stacked PSG + hypnogram plot with a shared x-axis.
 
 Notes
 -----
-- All plotting functions call ``plt.show()`` and therefore display figures
-    directly; they return ``None``. Callers who need figure objects can copy
-    the logic here and remove the final ``plt.show()``.
+- Functions call ``matplotlib.pyplot.show()`` and return ``None``. Copy the
+    plotting logic if callers need direct access to ``Figure``/``Axes`` objects.
 - Inputs expect NumPy arrays for time and signal values; stage labels are
-    supplied as lists of strings where required.
+    lists of strings when required.
 
 Example
 -------
->>> plot_signal(x_data, y_data, 'Time (s)', 'Voltage (uV)', title='EEG')
+>>> plot_signal(x, y, 'Time (s)', 'Voltage (uV)', title='EEG')
 
 Dependencies: numpy, matplotlib
 """
 
 from __future__ import annotations
 
+from typing import Any, Optional, Sequence, Tuple
+
 import numpy as np
+import numpy.typing as npt
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
 
 def plot_hypnogram_from_annotations(
     *,
-    times: np.ndarray,
-    vals: np.ndarray,
-    unique_labels: list[str],
-    subject: str | None = None,
-    xlim_s: tuple[float, float] | None = None,
+    times: npt.NDArray[Any],
+    vals: npt.NDArray[Any],
+    unique_labels: Sequence[str],
+    subject: Optional[str] = None,
+    xlim_s: Optional[Tuple[float, float]] = None,
 ) -> None:
-    """
-    Plot a hypnogram from annotation times and values.
+    """Plot a hypnogram from annotation times and numeric stage values.
 
     Parameters
     ----------
-    times : np.ndarray
-        Time points in seconds for each sleep stage annotation.
-    vals : np.ndarray
-        Numeric values corresponding to each sleep stage (0 to len(unique_labels)-1).
-    unique_labels : list[str]
-        List of sleep stage labels in order (e.g., ["W", "N1", "N2", "N3", "REM"]).
-    subject : str, optional
-        Subject identifier for the plot title. If None, a generic title is used.
-    xlim_s : tuple[float, float], optional
-        X-axis limits (min, max) in seconds.
+    times
+        1D array of annotation time points in seconds.
+    vals
+        1D array of numeric stage values (integers) corresponding to ``unique_labels``.
+    unique_labels
+        Ordered sequence of stage labels (e.g. ["W", "N1", "N2", "N3", "REM"]).
+    subject
+        Optional subject identifier used in the plot title.
+    xlim_s
+        Optional x-axis limits as ``(min_s, max_s)`` in seconds.
+
+    Notes
+    -----
+    This function displays the figure with ``plt.show()`` and returns ``None``.
     """
-    # Create figure with specified size
+
+    # Ensure inputs are NumPy arrays for consistent indexing and sizing
+    times = np.asarray(times)
+    vals = np.asarray(vals)
+
+    # Normalize time so plot starts at zero when possible
+    if times.size > 0 and times[0] != 0:
+        times = times - times[0]
+
+    # Create a compact, single-row figure for the hypnogram
     plt.figure(figsize=(10, 3))
 
-    # Plot as step function to show stage transitions
+    # Draw the hypnogram as a post-step plot to show stage durations
     plt.step(times, vals, where="post")
 
-    # Set y-axis limits with padding
+    # Provide a small vertical padding so ticks are not on the axes border
     plt.ylim(-0.5, len(unique_labels) - 0.5)
 
-    # Set x-axis limits if provided
+    # Apply x-axis limits when supplied
     if xlim_s is not None:
         plt.xlim(*xlim_s)
 
-    # Map numeric values to stage labels on y-axis
+    # Replace numeric ticks with human-readable stage labels
     plt.yticks(list(range(len(unique_labels))), unique_labels)
-
-    # Label x-axis
     plt.xlabel("Time (s)")
 
-    # Set title with or without subject identifier
-    if subject is not None:
-        plt.title(f"Hypnogram for subject {subject}")
-    else:
-        plt.title("Hypnogram")
+    # Title: include subject id when provided
+    plt.title(f"Hypnogram for subject {subject}" if subject else "Hypnogram")
 
-    # Invert y-axis so awake (W) is at top
+    # Invert y so that 'awake' stages (usually index 0) appear at the top
     plt.gca().invert_yaxis()
 
-    # Add grid for easier reading
+    # Add a vertical grid to aid reading of stage durations
     plt.grid(True, axis="x")
 
-    # Optimize layout and display
     plt.tight_layout()
     plt.show()
 
 
 def plot_psg_with_hypnogram_arrays(
     *,
-    time_data: np.ndarray,
-    time_label: str,
-    psg_data: np.ndarray,
-    psg_label: str,
-    hypno_time: np.ndarray,
-    hypno_data: np.ndarray,
-    hypno_label: str,
-    title: str | None = None,
-    hypno_tick_labels: list[str] | None = None,
-    xlim_s: tuple[float, float] | None = None,
+    psg_x_data: npt.NDArray[Any],
+    psg_x_label: str,
+    psg_y_data: npt.NDArray[Any],
+    psg_y_label: str,
+    psg_y_scale: float,
+    hypno_x_data: npt.NDArray[Any],
+    hypno_y_data: npt.NDArray[Any],
+    hypno_y_tick: Optional[Sequence[str]] = None,
+    hypno_y_label: str,
+    title: Optional[str] = None,
+    xlim_s: Optional[Tuple[float, float]] = None,
 ) -> None:
-    """
-    Plot PSG signal and hypnogram on separate subplots with shared x-axis.
+    """Plot a PSG trace with a stacked hypnogram sharing the x-axis.
 
     Parameters
     ----------
-    time_data : np.ndarray
-        Time points for PSG data in seconds.
-    time_label : str
-        Label for the time axis.
-    psg_data : np.ndarray
-        PSG signal values.
-    psg_label : str
-        Label for the PSG signal y-axis.
-    hypno_time : np.ndarray
-        Time points for hypnogram annotations in seconds.
-    hypno_data : np.ndarray
-        Numeric sleep stage values for hypnogram.
-    hypno_label : str
-        Label for the hypnogram y-axis.
-    title : str, optional
-        Figure title. If None, no title is displayed.
-    hypno_tick_labels : list[str], optional
-        Sleep stage labels for hypnogram y-axis ticks.
-    xlim_s : tuple[float, float], optional
-        X-axis limits (min, max) in seconds.
+    psg_x_data, hypno_x_data
+        1D time arrays in seconds for PSG and hypnogram annotations.
+    psg_y_data
+        1D PSG signal samples (will be multiplied by ``psg_y_scale``).
+    psg_y_label, hypno_y_label
+        Axis labels for the PSG and hypnogram plots.
+    psg_y_scale
+        Multiplicative scale applied to PSG signal for display.
+    hypno_y_data
+        Numeric stage values for the hypnogram subplot.
+    hypno_y_tick
+        Optional stage label strings for the hypnogram y-axis.
+    title
+        Optional overall figure title.
+    xlim_s
+        Optional x-axis limits as ``(min_s, max_s)``.
     """
-    # Create figure with two vertically stacked subplots sharing the same x-axis
-    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
 
-    # Plot PSG signal on top subplot
-    ax1.plot(time_data, psg_data)
-    ax1.set_ylabel(psg_label)
+    # Normalize inputs to NumPy arrays
+    psg_x = np.asarray(psg_x_data)
+    hypno_x = np.asarray(hypno_x_data)
+    psg_y = np.asarray(psg_y_data)
+    hypno_y = np.asarray(hypno_y_data)
+
+    # Align both time axes to start at zero when data is present
+    if psg_x.size > 0 and psg_x[0] != 0:
+        psg_x = psg_x - psg_x[0]
+    if hypno_x.size > 0 and hypno_x[0] != 0:
+        hypno_x = hypno_x - hypno_x[0]
+
+    # Create two stacked subplots that share the same x-axis
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 4))
+
+    # Top: PSG waveform (scaled for visibility)
+    ax1.plot(psg_x, psg_y * psg_y_scale)
+    ax1.set_ylabel(psg_y_label)
     ax1.grid(True)
     ax1.xaxis.set_major_locator(MaxNLocator(10))
     ax1.yaxis.set_major_locator(MaxNLocator(8))
 
-    # Plot hypnogram as step function on bottom subplot
-    ax2.step(hypno_time, hypno_data, where="post")
-    ax2.set_ylabel(hypno_label)
-    ax2.set_xlabel(time_label)
+    # Bottom: hypnogram as a step plot showing stage transitions
+    ax2.step(hypno_x, hypno_y, where="post")
+    ax2.set_ylabel(hypno_y_label)
+    ax2.set_xlabel(psg_x_label)
     ax2.grid(True)
     ax2.xaxis.set_major_locator(MaxNLocator(10))
 
-    # Set custom y-axis labels for hypnogram if provided
-    if hypno_tick_labels is not None:
-        ax2.set_yticks(list(range(len(hypno_tick_labels))))
-        ax2.set_yticklabels(list(hypno_tick_labels))
+    # Replace numeric y-ticks with supplied labels when available
+    if hypno_y_tick is not None:
+        ax2.set_yticks(list(range(len(hypno_y_tick))))
+        ax2.set_yticklabels(list(hypno_y_tick))
 
-    # Add figure title if provided
+    # Optional figure title centered above subplots
     if title:
         fig.suptitle(title)
 
-    # Set x-axis limits if provided
+    # Apply x-limits if requested
     if xlim_s is not None:
         ax2.set_xlim(*xlim_s)
 
-    # Optimize layout and display
     plt.tight_layout()
     plt.show()
 
 
 def plot_signal(
     *,
-    x_data: np.ndarray,
-    y_data: np.ndarray,
+    x_data: npt.NDArray[Any],
+    y_data: npt.NDArray[Any],
     x_label: str,
     y_label: str,
     y_scale: float = 1.0,
-    title: str | None = None,
-    xlim_s: tuple[float, float] | None = None,
+    title: Optional[str] = None,
+    xlim_s: Optional[Tuple[float, float]] = None,
 ) -> None:
-    """
-    Plot a 1D signal with optional scaling and title.
+    """Plot a 1D time-series signal with optional scaling and labels.
 
     Parameters
     ----------
-    x_data : np.ndarray
-        X-axis data points.
-    y_data : np.ndarray
-        Y-axis data points.
-    x_label : str
-        Label for the x-axis.
-    y_label : str
-        Label for the y-axis.
-    y_scale : float, optional
-        Multiplicative scaling factor applied to y_data. Default is 1.0.
-    title : str, optional
-        Figure title. If None, no title is displayed.
+    x_data
+        1D array of x values (typically time in seconds).
+    y_data
+        1D array of signal samples.
+    x_label, y_label
+        Axis labels for the plot.
+    y_scale
+        Scale factor applied to ``y_data`` for visualization.
+    title
+        Optional title for the figure.
+    xlim_s
+        Optional x-axis limits as ``(min_s, max_s)``.
     """
-    # Convert inputs to numpy arrays for consistency
+
+    # Normalize inputs to arrays and apply requested scaling
     x = np.asarray(x_data)
     y = np.asarray(y_data) * y_scale
 
-    # Create figure with specified size
-    plt.figure(figsize=(10, 3))
+    # Shift time so plots commonly start at zero for readability
+    if x.size > 0 and x[0] != 0:
+        x = x - x[0]
 
-    # Plot the signal
+    plt.figure(figsize=(10, 3))
     plt.plot(x, y)
 
-    # Set axis labels
+    # Set axis labels and optional title
     plt.xlabel(x_label)
     plt.ylabel(y_label)
-
-    # Add title if provided
     if title:
         plt.title(title)
 
-    # Set x-axis limits if provided
+    # Apply x-limits when provided
     if xlim_s is not None:
         plt.xlim(*xlim_s)
 
-    # Enable grid for easier reading
     plt.grid(True)
-
-    # Optimize layout and display
     plt.tight_layout()
     plt.show()
