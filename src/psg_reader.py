@@ -8,39 +8,41 @@ Features
 --------
 - Read EDF files using ``mne.io.read_raw_edf`` with controlled warning
     suppression for common header inconsistencies.
-- Expose EDF header fields (units, filters, samples per record, number of
-    records) and derived values such as per-channel sampling rates and total
-    sample counts.
+- Extract EDF header fields (units, filters, samples per record, number of
+    records) and compute derived values such as per-channel sampling rates and
+    total sample counts.
 - Provide a convenience method, :meth:`get_channel_data`, that returns a
     ``ChannelData`` object containing a time axis, the channel signal, human-
     readable labels, a plotting scale factor, and the channel sampling rate.
 
-Exports
--------
-- ``ChannelData``: immutable dataclass with fields ``x_label``, ``x``,
-    ``y_label``, ``y``, ``y_scale_factor``, and ``sampling_rate``.
+Class Overview
+--------------
+- ``ChannelData``: immutable dataclass with fields ``x_label``, ``x_data``,
+    ``y_label``, ``y_data``, ``y_scale_factor``, ``sampling_rate``,
+    ``start_time``, and ``recording_duration``.
+- ``PsgReader``: main class for reading and parsing EDF files with methods to
+    extract channel and file-level metadata.
 
-Behavior notes
+Behavior Notes
 --------------
 - Methods raise ``ValueError`` when required EDF header fields are missing
     or malformed; callers should catch these for robust pipelines.
-- The reader intentionally does not preload signal data (``preload=False``)
-    to avoid large memory usage. :meth:`get_channel_data` reads channel data on
-    demand from the underlying MNE ``Raw`` object and computes a time axis and
-    scale factor suitable for plotting.
+- The reader does not preload signal data (``preload=False``) to minimize
+    memory usage. Signal data is read on demand via :meth:`get_channel_data`.
+- Time axes are computed relative to the recording start time (Unix epoch).
+- Missing filter specifications default to 999 Hz (lowpass) and 0.001 Hz
+    (highpass).
 
 Dependencies
 ------------
 - mne
 - numpy
 - pathlib
-- attrs (used for the ``ChannelData`` dataclass)
 
 Example
 -------
-The module includes a small ``if __name__ == "__main__"`` usage example that
-demonstrates reading an EDF file and plotting a channel via the project's
-``folders`` and ``plotters`` helpers.
+See the ``if __name__ == "__main__"`` section for a usage example that
+demonstrates reading an EDF file and plotting a channel.
 """
 
 from __future__ import annotations
@@ -66,6 +68,10 @@ class ChannelData:
     y_scale_factor: float  # for plotting units (e.g., µV)
     sampling_rate: float  # Hz
 
+    # Alignment data
+    start_time: float
+    recording_duration: float
+
 
 class PsgReader:
     """
@@ -82,6 +88,8 @@ class PsgReader:
         no_of_data_blocks (int): Number of records/blocks in the EDF file.
         no_of_channels (int): Total number of channels in the recording.
         duration_of_data_block (float): Duration of each record in seconds.
+        recording_start_time_s (float): Recording start time in seconds since epoch.
+        recording_duration (float): Total recording duration in seconds.
         channel_names (tuple[str]): Names of all channels.
         channel_scale (tuple[float]): Scale/unit conversion factors for each channel.
         channel_lpf (tuple[float]): Low-pass filter frequencies (Hz) for each channel.
@@ -106,6 +114,8 @@ class PsgReader:
         self.no_of_data_blocks: int = self._get_no_of_data_blocks()
         self.no_of_channels: int = self._get_no_of_channels()
         self.duration_of_data_block: float = self._get_duration_of_data_block()
+        self.recording_start_time_s: float = self._get_recording_start_time_s()
+        self.recording_duration: float = self._recording_duration_s()
         self.channel_names: tuple[str, ...] = self._get_channel_names()
         self.channel_scale: tuple[float, ...] = self._get_channel_scale()
         self.channel_lpf: tuple[float, ...] = self._get_channel_low_pass_filter()
@@ -224,6 +234,37 @@ class PsgReader:
             raise ValueError(f"Invalid number of records: {no_records}")
 
         return no_records
+
+    def _get_recording_start_time_s(self) -> float:
+        """
+        Extract the recording start time in seconds since Unix epoch.
+
+        Handles multiple formats for the measurement date from MNE raw info:
+        - datetime object with timestamp() method
+        - tuple of (seconds, microseconds)
+
+        Returns:
+            float: Recording start time in seconds since Unix epoch.
+
+        Raises:
+            ValueError: If meas_date is missing or in an unsupported format.
+        """
+
+        meas_date = self.raw.info.get("meas_date", None)
+
+        if meas_date is None:
+            raise ValueError("EDF measurement start time is missing.")
+
+        # If datetime
+        if hasattr(meas_date, "timestamp"):
+            return float(meas_date.timestamp())
+
+        # If (seconds, microseconds) tuple
+        if isinstance(meas_date, tuple) and len(meas_date) == 2:
+            sec, usec = meas_date
+            return float(sec) + float(usec) * 1e-6
+
+        raise ValueError(f"Unsupported meas_date format: {type(meas_date)}")
 
     # --- Channel level metadata ---
 
@@ -520,6 +561,18 @@ class PsgReader:
 
         return tuple(out)
 
+    def _recording_duration_s(self) -> float:
+        """
+        Calculate the total recording duration in seconds.
+
+        Computes the total duration of the recording by multiplying the number
+        of data blocks by the duration of each individual data block.
+
+        Returns:
+            float: The total recording duration in seconds.
+        """
+        return float(self.no_of_data_blocks * self.duration_of_data_block)
+
     def get_channel_data(self, channel: str) -> ChannelData:
         """
         Retrieve time and signal data for a specific channel.
@@ -555,6 +608,9 @@ class PsgReader:
         # Get sampling frequency for this channel
         freq: float = self.ch_sampling_rate[channel_index]
 
+        # Time data
+        start_time: float = self.recording_start_time_s
+
         # ---- Time axis (x) ----
         x_name: str = "Time"
         x_unit: str = "seconds"
@@ -562,7 +618,7 @@ class PsgReader:
 
         # Create time axis from 0 to duration based on sample count
         n_samples: int = self.ch_sample_count[channel_index]
-        x_data: np.ndarray = np.arange(n_samples) / freq
+        x_data: np.ndarray = start_time + (np.arange(n_samples) / freq)
 
         # ---- Signal axis (y) ----
         y_name: str = self.channel_names[channel_index]
@@ -583,6 +639,8 @@ class PsgReader:
             y_data=y_data,
             y_scale_factor=y_scale_factor,
             sampling_rate=freq,
+            start_time=start_time,
+            recording_duration=self.recording_duration,
         )
 
 
@@ -599,6 +657,8 @@ if __name__ == "__main__":
     print("Number of channels:", edf_data.no_of_channels)
     print("Number of data blocks:", edf_data.no_of_data_blocks)
     print("Duration per data block (seconds):", edf_data.duration_of_data_block)
+    print("Recording start time (s since epoch):", edf_data.recording_start_time_s)
+    print("Recording duration (seconds):", edf_data.recording_duration)
     print("Channels names:", edf_data.channel_names)
     print("Channel scale:", edf_data.channel_scale)
     print("Channel low pass filter (Hz):", edf_data.channel_lpf)
