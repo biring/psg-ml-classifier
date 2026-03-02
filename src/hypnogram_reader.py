@@ -188,7 +188,7 @@ class HypnogramReader:
         if getattr(self, "annotations", None) is None:
             raise RuntimeError("No annotations available to extract descriptions.")
 
-        return tuple(self.annotations.description)
+        return tuple(str(d) for d in self.annotations.description)
 
     def _calculate_recording_duration(self) -> float:
         """
@@ -231,7 +231,7 @@ class HypnogramReader:
             RuntimeError: If no stage descriptions are found.
         """
         # Use dict.fromkeys to preserve insertion order while removing duplicates
-        stages: list[str] = list(dict.fromkeys(self.descriptions))
+        stages: list[str] = list(dict.fromkeys(str(s) for s in self.descriptions))
         if not stages:
             raise RuntimeError("No stage descriptions found in annotations.")
 
@@ -281,14 +281,10 @@ class HypnogramReader:
         remap_keys = set(remap.remap.keys())
 
         missing = raw_unique - remap_keys
-        extra = remap_keys - raw_unique
-        if missing or extra:
+        if missing:
             parts: list[str] = []
-            if missing:
-                parts.append(f"missing mappings for raw labels: {sorted(missing)}")
-            if extra:
-                parts.append(f"unknown remap keys: {sorted(extra)}")
-            raise ValueError("Invalid remap config: " + "; ".join(parts))
+            parts.append(sorted(missing))
+            raise ValueError("Missing mappings for raw labels: " + "".join(parts))
 
         # Map each original description to its new label
         mapped_descriptions: tuple[str, ...] = tuple(
