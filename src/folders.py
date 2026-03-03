@@ -14,7 +14,7 @@ Example:
 from pathlib import Path
 
 from .constants import (
-    EDF_FILE_SUFFIX,
+    PSG_FILE_SUFFIX,
     SLEEP_DATA_DIR,
     REPORTS_DIR,
     HYPNOGRAM_FILE_SUFFIX,
@@ -110,7 +110,7 @@ def get_edf_files_in_sleep_data() -> list[Path]:
         True
     """
     sleep_dir = get_sleep_data_dir()
-    edf_files = list(sleep_dir.glob(f"*{EDF_FILE_SUFFIX}"))
+    edf_files = list(sleep_dir.glob(f"*{PSG_FILE_SUFFIX}"))
     if not edf_files:
         raise FileNotFoundError(
             f"No EDF files found in sleep data directory: {sleep_dir}"
