@@ -10,13 +10,13 @@ Main components
 - ``HypnogramData``: immutable dataclass containing ``times``, ``vals``,
     ``unique_labels``, ``start_time``, and ``recording_duration`` for step
     plot visualization.
-- ``MapppingConfig``: configuration dataclass for optional label remapping.
+- ``MappingConfig``: configuration dataclass for optional label remapping.
 
 Features
 --------
 - Read annotations using ``mne.read_annotations``.
 - Preserve the order of first appearance when mapping labels to integers.
-- Optional label remapping via ``MapppingConfig``.
+- Optional label remapping via ``MappingConfig``.
 - Validate remapping configurations and ensure data consistency.
 
 Notes
@@ -28,7 +28,6 @@ Notes
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
 
 import mne
 
@@ -45,7 +44,7 @@ class HypnogramData:
 
 
 @dataclass(frozen=True)
-class MapppingConfig:
+class MappingConfig:
     enabled: bool = False
     remap: dict[str, str] = field(
         default_factory=dict
@@ -250,7 +249,7 @@ class HypnogramReader:
         return {stage: i for i, stage in enumerate(self.unique_stages)}
 
     def _apply_remap_and_validate(
-        self, remap: MapppingConfig
+        self, remap: MappingConfig
     ) -> tuple[tuple[str, ...], tuple[str, ...], dict[str, int]]:
         """
         Apply remapping to stage descriptions and validate the configuration.
@@ -260,7 +259,7 @@ class HypnogramReader:
         a new label-to-integer mapping.
 
         Args:
-            remap (MapppingConfig): Configuration containing the remapping dictionary.
+            remap (MappingConfig): Configuration containing the remapping dictionary.
                 Must have a ``remap`` attribute with entries for all unique stages.
 
         Returns:
@@ -305,7 +304,7 @@ class HypnogramReader:
     def get_hypnogram_data(
         self,
         *,
-        remap: MapppingConfig,
+        remap: MappingConfig,
     ) -> HypnogramData:
         """
         Build step-plot data from hypnogram annotations.
@@ -315,7 +314,7 @@ class HypnogramReader:
         based on the provided configuration.
 
         Args:
-            remap (MapppingConfig): Configuration for optional label remapping.
+            remap (MappingConfig): Configuration for optional label remapping.
                 If ``remap.enabled`` is True, labels are remapped according to
                 ``remap.remap`` dictionary. If False, original labels are used.
 
@@ -328,11 +327,11 @@ class HypnogramReader:
                 - recording_duration: total recording duration
 
         Raises:
-            TypeError: If remap is not a MapppingConfig instance.
+            TypeError: If remap is not a MappingConfig instance.
             ValueError: If remap.enabled is True but remap configuration is invalid.
         """
-        if not isinstance(remap, MapppingConfig):
-            raise TypeError("remap must be an instance of MapppingConfig")
+        if not isinstance(remap, MappingConfig):
+            raise TypeError("remap must be an instance of MappingConfig")
 
         if remap.enabled:
             # Apply remapping to hypno labels (validates remap covers raw labels)
@@ -382,9 +381,9 @@ if __name__ == "__main__":
     print("Stage to int mapping:", hyp_data.stage_mapping)
 
     # Plot default hypnogram
-    map_config = MapppingConfig(
+    map_config = MappingConfig(
         enabled=False,
-        remap={},  # no remapping; use original labels},
+        remap={},  # no remapping; use original labels
     )
     hypnogram_data = hyp_data.get_hypnogram_data(
         remap=map_config,
@@ -401,7 +400,7 @@ if __name__ == "__main__":
     )
 
     # Plot remapped hypnogram (e.g., combine N1 and N2 into "Light sleep")
-    remap_config = MapppingConfig(
+    remap_config = MappingConfig(
         enabled=True,
         remap={
             "Sleep stage W": "Wake",
