@@ -14,10 +14,15 @@ Example:
 from pathlib import Path
 
 from .constants import (
-    PSG_FILE_SUFFIX,
-    SLEEP_DATA_DIR,
+    # folder constants
+    DATASET_DIR,
     REPORTS_DIR,
+    SLEEP_DATA_DIR,
+    # file extension
+    PICKLE_FILE_EXTENSION,
+    # file suffixes
     HYPNOGRAM_FILE_SUFFIX,
+    PSG_FILE_SUFFIX,
 )
 
 
@@ -61,6 +66,29 @@ def get_sleep_data_dir() -> Path:
     if not path.exists():
         raise FileNotFoundError(
             f"Sleep data directory not found: {path}. Create it manually."
+        )
+    return path.resolve()
+
+
+def get_datasets_dir() -> Path:
+    """
+    Return the path to the datasets directory.
+
+    Retrieves the absolute path to the datasets directory located within the project root.
+    The directory will be created if it does not exist.
+
+    Returns:
+        Path: The absolute path object pointing to the datasets directory.
+
+    Example:
+        >>> datasets_path = get_datasets_dir()
+        >>> datasets_path.exists()
+        True
+    """
+    path = _get_project_root() / DATASET_DIR
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Datasets directory not found: {path}. Create it manually."
         )
     return path.resolve()
 
@@ -176,6 +204,7 @@ if __name__ == "__main__":
     # Example usage
     print("Project root directory:", _get_project_root())
     print("Sleep data directory:", get_sleep_data_dir())
+    print("Datasets directory:", get_datasets_dir())
     print("Reports directory:", get_reports_dir())
     print("EDF files in sleep data directory:", get_edf_files_in_sleep_data())
     print(
