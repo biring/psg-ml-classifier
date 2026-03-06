@@ -23,7 +23,7 @@ Key Functions
 Features
 --------
 - **Channel filtering**: Optional bandpass filtering of PSG signals via FilterConfig.
-- **Label remapping**: Optional remapping of hypnogram sleep stage labels via MapppingConfig.
+- **Label remapping**: Optional remapping of hypnogram sleep stage labels via MappingConfig.
 - **Temporal alignment**: Automatic synchronization of PSG and hypnogram data to
     absolute time (seconds since epoch).
 - **Epoch construction**: Uniform grid epoch extraction with hypnogram label assignment
@@ -37,7 +37,7 @@ data handling for use in visualization pipelines and machine learning workflows.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple
 from pathlib import Path
 
 import numpy as np
@@ -47,7 +47,7 @@ from .psg_reader import ChannelData  # dataclass for channel data
 
 from .hypnogram_reader import HypnogramReader  # hypnogram reading module
 from .hypnogram_reader import HypnogramData  # dataclass for hypnogram data
-from .hypnogram_reader import MapppingConfig  # dataclass for hypnogram remapping config
+from .hypnogram_reader import MappingConfig  # dataclass for hypnogram remapping config
 
 from .signal_processing import bandpass_filter  # filtering helper
 from .signal_processing import FilterConfig  # dataclass for filter configuration
@@ -443,7 +443,7 @@ class SleepSession:
     def get_hypnogram_data(
         self,
         *,
-        remap: MapppingConfig,
+        remap: MappingConfig,
     ) -> HypnogramData:
         """
         Retrieve hypnogram data with optional label remapping.
@@ -455,7 +455,7 @@ class SleepSession:
 
         Parameters
         ----------
-        remap : MapppingConfig
+        remap : MappingConfig
             Configuration object controlling label remapping behavior.
             If ``enabled=True``, applies the label transformations specified
             in the ``remap`` dictionary; otherwise returns original labels.
@@ -475,11 +475,11 @@ class SleepSession:
 
         See Also
         --------
-        MapppingConfig : Configuration for hypnogram label remapping.
+        MappingConfig : Configuration for hypnogram label remapping.
         HypnogramData : Output dataclass structure.
         """
         # Fetch hypnogram annotations from the underlying reader, applying optional
-        # label remapping based on the provided MapppingConfig. The remap parameter
+        # label remapping based on the provided MappingConfig. The remap parameter
         # controls whether to transform labels (enabled=True) or use originals (enabled=False).
         hypno_data: HypnogramData = self.hypno.get_hypnogram_data(remap=remap)
 
@@ -492,7 +492,7 @@ class SleepSession:
         *,
         channel: str,
         filter_cfg: FilterConfig,
-        remap_cfg: MapppingConfig,
+        remap_cfg: MappingConfig,
         title: Optional[str] = None,
         restrict_to_hypnogram_window: bool = True,
     ) -> SleepDataPlot:
@@ -511,7 +511,7 @@ class SleepSession:
         filter_cfg : FilterConfig
             Filter configuration for the PSG channel. If ``enabled=True``,
             applies bandpass filtering; otherwise returns raw signal.
-        remap_cfg : MapppingConfig
+        remap_cfg : MappingConfig
             Configuration for hypnogram label remapping. If ``enabled=True``,
             remaps sleep stage labels; otherwise uses original labels.
         title : Optional[str], optional
@@ -603,7 +603,7 @@ class SleepSession:
         channel: str,
         epoch_len_s: int = 30,
         filter_cfg: FilterConfig,
-        remap_cfg: MapppingConfig,
+        remap_cfg: MappingConfig,
         max_drop_fraction: float = 0.01,
     ) -> Epochs:
         """
@@ -626,7 +626,7 @@ class SleepSession:
         filter_cfg : FilterConfig
             Filter configuration for the PSG channel. If ``enabled=True``, applies
             bandpass filtering; otherwise returns raw signal.
-        remap_cfg : MapppingConfig
+        remap_cfg : MappingConfig
             Configuration for hypnogram label remapping. If ``enabled=True``, remaps
             sleep stage labels; otherwise uses original labels.
         max_drop_fraction : float, optional
@@ -918,7 +918,7 @@ if __name__ == "__main__":
     sleep_session = SleepSession(sample_eeg_file, sample_hyp_file)
 
     # --- original hypnogram plot (no remapping) ---
-    hypno_data = sleep_session.get_hypnogram_data(remap=MapppingConfig(enabled=False))
+    hypno_data = sleep_session.get_hypnogram_data(remap=MappingConfig(enabled=False))
     plot.plot_hypnogram_from_annotations(
         times=hypno_data.times,
         vals=hypno_data.vals,
@@ -928,7 +928,7 @@ if __name__ == "__main__":
     )
 
     # --- mapped hypnogram plot (with remapping) ---
-    remap_config = MapppingConfig(
+    remap_config = MappingConfig(
         enabled=True,
         remap={
             "Sleep stage W": "Wake",
@@ -985,7 +985,7 @@ if __name__ == "__main__":
     # --- combined PSG + hypnogram plot (no filtering, no remapping) ---
     channel = "EEG Fpz-Cz"  # example channel name; adjust as needed
     filter_cfg = FilterConfig(enabled=False)
-    remap_cfg = MapppingConfig(
+    remap_cfg = MappingConfig(
         enabled=False,  # use original hypnogram labels for this plot
         remap={},  # no remapping
     )
@@ -1013,7 +1013,7 @@ if __name__ == "__main__":
     # --- combined PSG + hypnogram plot (with filtering and remapping) ---
     channel = "EEG Fpz-Cz"  # example channel name; adjust as needed
     filter_cfg = FilterConfig(enabled=True, l_freq=0.5, h_freq=40.0, order=4)
-    remap_cfg = MapppingConfig(
+    remap_cfg = MappingConfig(
         enabled=True,
         remap={
             "Sleep stage W": "Wake",
@@ -1054,7 +1054,7 @@ if __name__ == "__main__":
         filter_cfg=FilterConfig(
             enabled=False,  # no filtering for this dataset example
         ),
-        remap_cfg=MapppingConfig(
+        remap_cfg=MappingConfig(
             enabled=False,  # no remapping for this dataset example
         ),
     )
@@ -1070,7 +1070,7 @@ if __name__ == "__main__":
             h_freq=40.0,
             order=4,
         ),
-        remap_cfg=MapppingConfig(
+        remap_cfg=MappingConfig(
             enabled=True,  # enable remapping for this dataset example
             remap={
                 "Sleep stage W": "Wake",
