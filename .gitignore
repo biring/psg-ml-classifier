@@ -1,6 +1,7 @@
 # -- Ignore datasets and intermediate files ---
 data/epoch_tables/
 data/physionet-sleep-data/
+data/datasets/
 
 # -- Ignore Python cache and virtual environment files ---
 __pycache__/
