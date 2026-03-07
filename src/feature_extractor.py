@@ -55,7 +55,7 @@ class FrequencyDomainFeatures:
 
     Attributes
     ----------
-    bin_powers : np.ndarray
+    features : np.ndarray
         1D array of average power values for each frequency bin.
         Shape is (n_bins,) with dtype float64.
     bin_width_hz : float
@@ -64,16 +64,21 @@ class FrequencyDomainFeatures:
         Nyquist frequency in Hz, computed as sampling_frequency / 2.
     n_bins : int
         Total number of frequency bins used during FFT aggregation.
+    feature_names : tuple[str, ...]
+        Tuple of feature names corresponding to each frequency bin, formatted as
+        "{center_freq:.1f}Hz" where center_freq is the midpoint frequency of the bin.
     """
 
     # Power values aggregated across equal-width frequency bins
-    bin_powers: np.ndarray
+    features: np.ndarray
     # Width of each frequency bin in Hz
     bin_width_hz: float
     # Nyquist frequency (maximum frequency represented) in Hz
     nyquist_hz: float
     # Number of bins used to partition the frequency spectrum
     n_bins: int
+    # Feature names as centered frequency +/- bin_width_hz/2
+    feature_names: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -87,7 +92,7 @@ class Dataset:
 
     Attributes
     ----------
-    epochs : tuple[tuple[np.ndarray, ...], int]
+    x_epochs : tuple[tuple[np.ndarray, ...], int]
         Tuple of processed epochs, where each epoch is a 2-tuple:
         - [0]: tuple of feature arrays (e.g., (time_domain_features, frequency_domain_features))
         - [1]: integer label index corresponding to a label in y_labels.
@@ -99,13 +104,13 @@ class Dataset:
         frequency, Nyquist frequency, number of bins, and feature dimensions.
     """
 
-    epochs: tuple[tuple[np.ndarray, ...], int]
+    x_epochs: tuple[tuple[np.ndarray, ...], int]
     y_labels: tuple[str, ...]
     stats: dict[str, float]
 
     def __len__(self) -> int:
         """Return the total number of epochs in the dataset."""
-        return len(self.epochs)
+        return len(self.x_epochs)
 
     def to_arrays(self) -> tuple[np.ndarray, np.ndarray]:
         """
@@ -127,14 +132,14 @@ class Dataset:
         ValueError
             If the dataset contains no epochs.
         """
-        if len(self.epochs) == 0:
+        if len(self.x_epochs) == 0:
             raise ValueError("No epochs available.")
 
         # Collect feature vectors and labels for all epochs
         X_list: list[np.ndarray] = []
         y_list: list[int] = []
 
-        for (time_feat, freq_feat), label in self.epochs:
+        for (time_feat, freq_feat), label in self.x_epochs:
             # Flatten time-domain features and concatenate with frequency-domain features
             combined: np.ndarray = np.concatenate(
                 [time_feat.flatten(), np.asarray(freq_feat)]
@@ -150,7 +155,7 @@ class Dataset:
         return X, y
 
 
-def _generate_time_domain_features(signal: np.ndarray) -> np.ndarray:
+def _generate_time_domain_features(signal: np.ndarray) -> tuple[np.ndarray, list[str]]:
     """
     Extract time-domain statistical features from a 1D EEG signal.
 
@@ -176,41 +181,51 @@ def _generate_time_domain_features(signal: np.ndarray) -> np.ndarray:
     - Zero-crossing rate is normalized by signal length.
     """
     features: list[np.ndarray] = []
+    feature_names: list[str] = []
 
     # Mean: average amplitude across the signal
     features.append(np.mean(signal, axis=0))
+    feature_names.append("mean")
 
     # Standard deviation: measure of amplitude spread around the mean
     features.append(np.std(signal, axis=0))
+    feature_names.append("standard_deviation")
 
     # Variance: squared standard deviation
     features.append(np.var(signal, axis=0))
+    feature_names.append("variance")
 
     # Minimum: lowest amplitude value in the signal
     features.append(np.min(signal, axis=0))
+    feature_names.append("minimum")
 
     # Maximum: highest amplitude value in the signal
     features.append(np.max(signal, axis=0))
+    feature_names.append("maximum")
 
     # Root mean square: measure of signal energy
     features.append(np.sqrt(np.mean(signal**2, axis=0)))
+    feature_names.append("root_mean_square")
 
     # Skewness: asymmetry of the amplitude distribution (normalized by std^3)
     features.append(
         np.mean((signal - np.mean(signal, axis=0)) ** 3, axis=0)
         / (np.std(signal, axis=0) ** 3 + 1e-8)
     )
+    feature_names.append("skewness")
 
     # Kurtosis: tail heaviness of the amplitude distribution (normalized by std^4)
     features.append(
         np.mean((signal - np.mean(signal, axis=0)) ** 4, axis=0)
         / (np.std(signal, axis=0) ** 4 + 1e-8)
     )
+    feature_names.append("kurtosis")
 
     # Zero-crossing rate: proportion of times the signal crosses zero
     features.append(np.mean(np.diff(np.sign(signal), axis=0) != 0, axis=0))
+    feature_names.append("zero_crossing_rate")
 
-    return np.array(features)
+    return np.array(features), feature_names
 
 
 def _generate_frequency_domain_features(
@@ -290,11 +305,17 @@ def _generate_frequency_domain_features(
         where=power_cnt > 0,
     )
 
+    # Generate feature names as centered frequency +/- bin_width/2
+    feature_names: tuple[str, ...] = tuple(
+        f"{(i + 0.5) * bin_width:.1f}Hz" for i in range(n_bins)
+    )
+
     return FrequencyDomainFeatures(
-        bin_powers=bin_powers,
+        features=bin_powers,
         bin_width_hz=bin_width,
         nyquist_hz=nyquist,
         n_bins=n_bins,
+        feature_names=feature_names,
     )
 
 
@@ -359,7 +380,11 @@ def build_dataset(
             raise ValueError("Input signal is empty.")
 
         # Generate time-domain features from the raw signal
-        time_feature: np.ndarray = _generate_time_domain_features(signal=raw_x_data)
+        time_features: np.ndarray = np.array([])
+        time_feature_names: list[str] = []
+        time_features, time_feature_names = _generate_time_domain_features(
+            signal=raw_x_data
+        )
 
         # Generate frequency-domain features from the raw signal
         frequency_feature: FrequencyDomainFeatures = (
@@ -372,8 +397,8 @@ def build_dataset(
 
         # Combine time and frequency features for this epoch
         feature_x_data: tuple[np.ndarray, np.ndarray] = (
-            time_feature,
-            frequency_feature.bin_powers,
+            time_features,
+            frequency_feature.features,
         )
         processed_epochs.append((feature_x_data, label))
 
@@ -383,6 +408,8 @@ def build_dataset(
             stats["nyquist_hz"] = frequency_feature.nyquist_hz
             stats["n_bins"] = float(frequency_feature.n_bins)
             stats["bin_width_hz"] = frequency_feature.bin_width_hz
+            stats["time_feature_names"] = (time_feature_names,)
+            stats["frequency_feature_names"] = (frequency_feature.feature_names,)
 
     # Validate that at least one epoch was processed
     if not processed_epochs:
@@ -396,7 +423,7 @@ def build_dataset(
         stats["time_feature_dim"] = float(processed_epochs[0][0][0].size)
         stats["frequency_feature_dim"] = float(processed_epochs[0][0][1].size)
 
-    return Dataset(epochs=tuple(processed_epochs), y_labels=labels, stats=stats)
+    return Dataset(x_epochs=tuple(processed_epochs), y_labels=labels, stats=stats)
 
 
 def format_feature_dataset_summary(ds: Dataset) -> str:
@@ -432,7 +459,7 @@ def format_feature_dataset_summary(ds: Dataset) -> str:
     """
 
     # Get the total number of epochs in the dataset
-    n_epochs: int = len(ds.epochs)
+    n_epochs: int = len(ds.x_epochs)
 
     # Build stacked arrays once to extract shapes and compute label distribution
     if n_epochs:
@@ -441,9 +468,9 @@ def format_feature_dataset_summary(ds: Dataset) -> str:
         y: np.ndarray
         X, y = ds.to_arrays()
         # Extract time-domain feature shape from first epoch
-        time_dim: tuple[int, ...] = ds.epochs[0][0][0].shape
+        time_dim: tuple[int, ...] = ds.x_epochs[0][0][0].shape
         # Extract frequency-domain feature shape from first epoch
-        freq_dim: tuple[int, ...] = ds.epochs[0][0][1].shape
+        freq_dim: tuple[int, ...] = ds.x_epochs[0][0][1].shape
     else:
         raise ValueError("Dataset contains no epochs, cannot generate summary.")
 
@@ -451,28 +478,24 @@ def format_feature_dataset_summary(ds: Dataset) -> str:
     lines: list[str] = [
         "",
         "-" * 40,
-        "Feature Dataset Summary",
-        "-" * 40,
-        f"Total Epochs         : {n_epochs}",
-        f"y_labels             : {ds.y_labels}",
-        "",
-        "Feature Dimensions",
-        "-" * 40,
-        f"Time-domain feature  : {time_dim}",
-        f"Freq-domain feature  : {freq_dim}",
-        "",
         "Array Shapes",
         "-" * 40,
         f"X shape : {X.shape}",
         f"y shape : {y.shape}",
+        "",
+        "Feature Summary",
+        "-" * 40,
+        f"Time-domain feature  : {time_dim}",
+        f"Freq-domain feature  : {freq_dim}",
+        f"y_labels             : {ds.y_labels}",
     ]
 
     # Append optional metadata captured during feature extraction
     if ds.stats:
         lines.extend(["", "Metadata (stats)", "-" * 40])
         # Iterate through stats dictionary in sorted key order for consistent output
-        for k in sorted(ds.stats.keys()):
-            lines.append(f"{k:<20} : {ds.stats[k]}")
+        for k in ds.stats.keys():
+            lines.append(f"{k:<30} : {ds.stats[k]}")
 
     # Append label distribution statistics
     lines.extend(["", "Label Distribution", "-" * 40])
@@ -499,8 +522,9 @@ def format_feature_dataset_summary(ds: Dataset) -> str:
                 f"{label_name:<20} : {int(c):>5} epochs ({(c/total)*100:6.2f}%)"
             )
     else:
-        # Handle edge case of empty dataset
-        lines.append("(empty dataset)")
+        raise ValueError(
+            "No labels found in dataset, cannot compute label distribution."
+        )
 
     return "\n".join(lines)
 
