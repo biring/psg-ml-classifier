@@ -6,11 +6,12 @@ using Python's `pickle` module. It includes functions for saving datasets to dis
 loading them back, and comparing Dataset instances for equality.
 
 Key functions:
-- save_dataset_to_file: Save a Dataset to disk with optional compression
+- save_dataset_to_file: Save a Dataset to disk in the project's standard format
 - load_dataset_from_file: Load a Dataset from disk
-- _save_dataset: Low-level pickle serialization
+- _save_dataset: Low-level pickle serialization with directory creation
 - _load_dataset: Low-level pickle deserialization
 - _equals: Deep comparison of two Dataset instances
+- _build_file_path: Construct standardized file paths for datasets
 
 The module depends on the `Dataset` dataclass and related utilities defined
 in `constants` and `folders` modules.
@@ -187,6 +188,11 @@ def _save_dataset(path: str | Path, dataset: Dataset) -> None:
         # Create parent directories if they don't exist
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # if file exists, ignore
+        if file_path.exists():
+            print("e", end="")  # Print "e" to indicate existing file (without newline)
+            return
+
         # Pre-validate that the dataset can be pickled before writing to disk.
         # This allows catching a `pickle.PicklingError` early, before creating files.
         pickle.dumps(dataset)
@@ -194,6 +200,11 @@ def _save_dataset(path: str | Path, dataset: Dataset) -> None:
         # Write uncompressed pickle directly to file.
         with open(file_path, "wb") as fh:
             pickle.dump(dataset, fh, protocol=pickle.HIGHEST_PROTOCOL)
+
+        # check file creation
+        if file_path.exists():
+            print("c", end="")  # Print "c" to indicate created file (without newline)
+            return
 
     except pickle.PicklingError as e:
         raise pickle.PicklingError(f"Failed to serialize dataset: {e}")
@@ -323,6 +334,8 @@ if __name__ == "__main__":
         stats={"sampling_freq": 100.0, "num_bins": 10},
     )
 
+    # read and write dataset to verify round-trip consistency
+    print("Testing dataset save and load consistency:")
     try:
         print("Write dataset:", write_dataset)
         # Save and re-load the dataset to verify round-trip.
@@ -338,6 +351,19 @@ if __name__ == "__main__":
             print("SUCCESS: Dataset read and write are consistent.")
         else:
             raise ValueError("ERROR: Loaded dataset does not match original.")
+    finally:
+        if data_set_path.exists():
+            os.remove(data_set_path)
+
+    # writing an existing file name should not overwrite and should print "e"
+    print(
+        "\nTesting write with existing file (should print 'c' for created and 'e' for existing):"
+    )
+    try:
+        save_dataset_to_file(write_dataset)  # First write (should create file)
+        save_dataset_to_file(
+            write_dataset
+        )  # Second write (should detect existing file)
     finally:
         if data_set_path.exists():
             os.remove(data_set_path)
