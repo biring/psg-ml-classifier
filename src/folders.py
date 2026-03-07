@@ -1,8 +1,9 @@
 """
 Folder utility module for managing project directory paths and file retrieval.
 
-This module provides utilities for accessing key project directories (sleep data, reports)
+This module provides utilities for accessing key project directories (sleep data, datasets, reports)
 and retrieving specific file types (EDF files, hypnogram files) from the sleep data directory.
+It includes functions for directory validation, file discovery, and EDF-hypnogram pair matching.
 
 Example:
     >>> from folders import get_sleep_data_dir, get_edf_files_in_sleep_data
@@ -18,8 +19,6 @@ from .constants import (
     DATASET_DIR,
     REPORTS_DIR,
     SLEEP_DATA_DIR,
-    # file extension
-    PICKLE_FILE_EXTENSION,
     # file suffixes
     HYPNOGRAM_FILE_SUFFIX,
     PSG_FILE_SUFFIX,
@@ -200,14 +199,104 @@ def get_edf_file_by_subject_id(subject: str) -> Path:
     )
 
 
+def get_edf_file_pairs() -> tuple[tuple[Path, Path]]:
+    """
+    Retrieve paired PSG and hypnogram file paths from the sleep data directory.
+
+    Searches the sleep data directory for PSG (EDF) files and their corresponding
+    hypnogram files, returning them as matched pairs. The function ensures that
+    the number of PSG files matches the number of hypnogram files.
+
+    Returns:
+        tuple[tuple[Path, Path]]: A tuple of tuples, where each tuple contains
+            the paths to a PSG file and its corresponding hypnogram file.
+
+    Raises:
+        FileNotFoundError: If no PSG files are found or if the count of PSG files
+            does not match the count of hypnogram files in the sleep data directory.
+
+    Example:
+        >>> pairs = get_edf_file_pairs()
+        >>> psg_path, hyp_path = pairs[0]
+        >>> print(psg_path, hyp_path)
+    """
+    # Accumulate matched (psg_path, hyp_path) pairs
+    pairs: list[tuple[Path, Path]] = []
+
+    # Get the sleep data directory path
+    sleep_data_folder: Path = get_sleep_data_dir()
+
+    # Retrieve all PSG and hypnogram files from the sleep data directory
+    psg_files: list[Path] = list(sleep_data_folder.glob(f"*{PSG_FILE_SUFFIX}"))
+    hypno_files: list[Path] = list(sleep_data_folder.glob(f"*{HYPNOGRAM_FILE_SUFFIX}"))
+
+    # Get file counts for validation
+    psg_file_count: int = len(psg_files)
+    hypno_file_count: int = len(hypno_files)
+
+    # Ensure at least one PSG file exists
+    if psg_file_count == 0:
+        raise FileNotFoundError(
+            f"No PSG files found in sleep data directory: {sleep_data_folder}"
+        )
+
+    # Ensure PSG and hypnogram file counts match
+    if psg_file_count != hypno_file_count:
+        raise FileNotFoundError(
+            f"Mismatch in PSG and Hypnogram file counts in sleep data directory: {sleep_data_folder}. "
+            f"Found {psg_file_count} PSG files and {hypno_file_count} Hypnogram files."
+        )
+
+    # Iterate through sorted PSG files to find matching hypnogram files
+    for psg in sorted(psg_files):
+        # Extract subject ID from the first 5 characters of the filename
+        subject_id: str = psg.name[:5]
+
+        # Find the corresponding hypnogram file for this subject
+        hyp: list[Path] = list(
+            sleep_data_folder.glob(f"{subject_id}*{HYPNOGRAM_FILE_SUFFIX}")
+        )
+        if hyp:
+            # Add the pair of paths to the results
+            pairs.append((psg, hyp[0]))
+
+    return tuple(pairs)
+
+
 if __name__ == "__main__":
-    # Example usage
-    print("Project root directory:", _get_project_root())
-    print("Sleep data directory:", get_sleep_data_dir())
-    print("Datasets directory:", get_datasets_dir())
-    print("Reports directory:", get_reports_dir())
-    print("EDF files in sleep data directory:", get_edf_files_in_sleep_data())
-    print(
-        "Hypnogram files in sleep data directory:",
-        get_hypnogram_files_in_sleep_data(),
-    )
+    # --- DEMO / SMOKE TEST ---
+    # This block is for demonstration purposes and may be used as a smoke test.
+    # It will print the project directory structure and file statistics.
+
+    # Print project directory structure header
+    print("-" * 60)
+    print("PROJECT DIRECTORY STRUCTURE")
+    print("-" * 60)
+    # Display paths to key project directories
+    print(f"Project root: {_get_project_root()}")
+    print(f"Sleep data: {get_sleep_data_dir()}")
+    print(f"Datasets: {get_datasets_dir()}")
+    print(f"Reports: {get_reports_dir()}")
+
+    # Print file statistics header
+    print("-" * 60)
+    print("FILE STATISTICS")
+    print("-" * 60)
+    # Retrieve all EDF, hypnogram files, and matched pairs
+    edf_files = get_edf_files_in_sleep_data()
+    hypno_files = get_hypnogram_files_in_sleep_data()
+    pairs = get_edf_file_pairs()
+
+    # Display file counts
+    print(f"EDF files found: {len(edf_files)}")
+    print(f"Hypnogram files found: {len(hypno_files)}")
+    print(f"Matched pairs: {len(pairs)}")
+
+    # Print sample files header
+    print("-" * 60)
+    print("SAMPLE FILES")
+    print("-" * 60)
+    # Display sample filenames from retrieved collections
+    print(f"Sample EDF: {edf_files[0].name}")
+    print(f"Sample Hypnogram: {hypno_files[0].name}")
+    print(f"Sample Pair: ({pairs[0][0]}, {pairs[0][1]})")
