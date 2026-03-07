@@ -2,14 +2,16 @@
 Folder utility module for managing project directory paths and file retrieval.
 
 This module provides utilities for accessing key project directories (sleep data, datasets, reports)
-and retrieving specific file types (EDF files, hypnogram files) from the sleep data directory.
-It includes functions for directory validation, file discovery, and EDF-hypnogram pair matching.
+and retrieving specific file types (PSG/EDF files, hypnogram files) from the sleep data directory.
+It includes functions for directory validation, file discovery, EDF-hypnogram pair matching, and
+subject-based file lookup.
 
 Example:
-    >>> from folders import get_sleep_data_dir, get_edf_files_in_sleep_data
+    >>> from folders import get_sleep_data_dir, get_edf_file_pairs
     >>> sleep_dir = get_sleep_data_dir()
-    >>> edf_files = get_edf_files_in_sleep_data()
-    >>> print(f"Found {len(edf_files)} EDF files in {sleep_dir}")
+    >>> pairs = get_edf_file_pairs()
+    >>> subject_id, psg_path, hyp_path = pairs[0]
+    >>> print(f"Subject {subject_id}: {psg_path.name}, {hyp_path.name}")
 """
 
 from pathlib import Path
@@ -199,7 +201,7 @@ def get_edf_file_by_subject_id(subject: str) -> Path:
     )
 
 
-def get_edf_file_pairs() -> tuple[tuple[Path, Path]]:
+def get_edf_file_pairs() -> tuple[str, Path, Path]:
     """
     Retrieve paired PSG and hypnogram file paths from the sleep data directory.
 
@@ -208,8 +210,8 @@ def get_edf_file_pairs() -> tuple[tuple[Path, Path]]:
     the number of PSG files matches the number of hypnogram files.
 
     Returns:
-        tuple[tuple[Path, Path]]: A tuple of tuples, where each tuple contains
-            the paths to a PSG file and its corresponding hypnogram file.
+        tuple[str, Path, Path]: A tuple containing the subject ID,
+        the path to the PSG file, and the path to the corresponding hypnogram file.
 
     Raises:
         FileNotFoundError: If no PSG files are found or if the count of PSG files
@@ -217,11 +219,11 @@ def get_edf_file_pairs() -> tuple[tuple[Path, Path]]:
 
     Example:
         >>> pairs = get_edf_file_pairs()
-        >>> psg_path, hyp_path = pairs[0]
-        >>> print(psg_path, hyp_path)
+        >>> subject_id, psg_path, hyp_path = pairs[0]
+        >>> print(subject_id, psg_path, hyp_path)
     """
-    # Accumulate matched (psg_path, hyp_path) pairs
-    pairs: list[tuple[Path, Path]] = []
+    # Accumulate matched (subject_id, (psg_path, hyp_path)) pairs
+    pairs: list[tuple[str, tuple[Path, Path]]] = []
 
     # Get the sleep data directory path
     sleep_data_folder: Path = get_sleep_data_dir()
@@ -253,12 +255,12 @@ def get_edf_file_pairs() -> tuple[tuple[Path, Path]]:
         subject_id: str = psg.name[:5]
 
         # Find the corresponding hypnogram file for this subject
-        hyp: list[Path] = list(
-            sleep_data_folder.glob(f"{subject_id}*{HYPNOGRAM_FILE_SUFFIX}")
+        hyp: Path = next(
+            sleep_data_folder.glob(f"{subject_id}*{HYPNOGRAM_FILE_SUFFIX}"), None
         )
         if hyp:
             # Add the pair of paths to the results
-            pairs.append((psg, hyp[0]))
+            pairs.append((subject_id, psg, hyp))
 
     return tuple(pairs)
 
@@ -285,18 +287,17 @@ if __name__ == "__main__":
     # Retrieve all EDF, hypnogram files, and matched pairs
     edf_files = get_edf_files_in_sleep_data()
     hypno_files = get_hypnogram_files_in_sleep_data()
-    pairs = get_edf_file_pairs()
-
     # Display file counts
     print(f"EDF files found: {len(edf_files)}")
     print(f"Hypnogram files found: {len(hypno_files)}")
-    print(f"Matched pairs: {len(pairs)}")
 
     # Print sample files header
     print("-" * 60)
     print("SAMPLE FILES")
     print("-" * 60)
+    # Get a sample subject ID and corresponding PSG and hypnogram file paths
+    subject_id, psg_path, hyp_path = get_edf_file_pairs()[0]
     # Display sample filenames from retrieved collections
-    print(f"Sample EDF: {edf_files[0].name}")
-    print(f"Sample Hypnogram: {hypno_files[0].name}")
-    print(f"Sample Pair: ({pairs[0][0]}, {pairs[0][1]})")
+    print(f"Paired subject ID: {subject_id}")
+    print(f"Paired PSG: {psg_path.name}")
+    print(f"Paired Hypnogram: {hyp_path.name}")
