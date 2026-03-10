@@ -120,6 +120,64 @@ def get_reports_dir() -> Path:
     return path.resolve()
 
 
+def get_files_in_folder(folder: Path, file_extension: str) -> list[Path]:
+    """
+    Retrieve all files with a specified extension from a given folder.
+
+    Searches the specified folder for files matching the given extension.
+    The folder must exist and be a valid directory containing at least one
+    matching file.
+
+    Args:
+        folder (Path): The path to the folder to search.
+        file_extension (str): The file extension to match (e.g., ".edf", ".pkl").
+            Must start with a dot and cannot be empty.
+
+    Returns:
+        list[Path]: A list of Path objects for files matching the extension.
+
+    Raises:
+        FileNotFoundError: If the folder does not exist or no files with the
+            specified extension are found.
+        NotADirectoryError: If the folder path points to a file, not a directory.
+        ValueError: If the file extension is empty or does not start with a dot.
+
+    Example:
+        >>> pkl_files = get_files_in_folder(get_datasets_dir(), ".pkl")
+        >>> len(pkl_files) > 0
+        True
+    """
+
+    # Verify the folder exists
+    if not folder.exists():
+        raise FileNotFoundError(f"Folder not found: {folder}. Create it manually.")
+
+    # Ensure the path is a directory, not a file
+    if not folder.is_dir():
+        raise NotADirectoryError(f"Expected a directory but found a file: {folder}")
+
+    # Validate file extension is not empty
+    if file_extension == "":
+        raise ValueError("File extension cannot be empty.")
+
+    # Validate file extension starts with a dot
+    if not file_extension.startswith("."):
+        raise ValueError(
+            f"File extension should start with a dot (e.g., '.edf'): {file_extension}"
+        )
+
+    # Search for files matching the extension pattern
+    files: list[Path] = list(folder.glob(f"*{file_extension}"))
+
+    # Ensure at least one matching file was found
+    if not files:
+        raise FileNotFoundError(
+            f"No files with suffix '{file_extension}' found in folder: {folder}"
+        )
+
+    return files
+
+
 def get_edf_files_in_sleep_data() -> list[Path]:
     """
     Return a list of EDF file paths in the sleep data directory.
@@ -287,9 +345,11 @@ if __name__ == "__main__":
     # Retrieve all EDF, hypnogram files, and matched pairs
     edf_files = get_edf_files_in_sleep_data()
     hypno_files = get_hypnogram_files_in_sleep_data()
+    pickle_files = get_files_in_folder(get_datasets_dir(), ".pkl")
     # Display file counts
     print(f"EDF files found: {len(edf_files)}")
     print(f"Hypnogram files found: {len(hypno_files)}")
+    print(f"Pickle files found in datasets: {len(pickle_files)}")
 
     # Print sample files header
     print("-" * 60)
@@ -301,3 +361,4 @@ if __name__ == "__main__":
     print(f"Paired subject ID: {subject_id}")
     print(f"Paired PSG: {psg_path.name}")
     print(f"Paired Hypnogram: {hyp_path.name}")
+    print(f"Pickle file sample: {pickle_files[0].name}")
