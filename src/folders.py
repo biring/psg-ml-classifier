@@ -120,7 +120,7 @@ def get_reports_dir() -> Path:
     return path.resolve()
 
 
-def get_files_in_folder(folder: Path, file_extension: str) -> list[Path]:
+def get_files_in_folder(folder: Path, file_extension: str) -> tuple[Path, ...]:
     """
     Retrieve all files with a specified extension from a given folder.
 
@@ -134,7 +134,7 @@ def get_files_in_folder(folder: Path, file_extension: str) -> list[Path]:
             Must start with a dot and cannot be empty.
 
     Returns:
-        list[Path]: A list of Path objects for files matching the extension.
+        tuple[Path, ...]: A tuple of Path objects for files matching the extension.
 
     Raises:
         FileNotFoundError: If the folder does not exist or no files with the
@@ -157,7 +157,7 @@ def get_files_in_folder(folder: Path, file_extension: str) -> list[Path]:
         raise NotADirectoryError(f"Expected a directory but found a file: {folder}")
 
     # Validate file extension is not empty
-    if file_extension == "":
+    if not file_extension:
         raise ValueError("File extension cannot be empty.")
 
     # Validate file extension starts with a dot
@@ -166,8 +166,12 @@ def get_files_in_folder(folder: Path, file_extension: str) -> list[Path]:
             f"File extension should start with a dot (e.g., '.edf'): {file_extension}"
         )
 
-    # Search for files matching the extension pattern
-    files: list[Path] = list(folder.glob(f"*{file_extension}"))
+    # Search for files whose suffix exactly matches the given extension
+    files: list[Path] = [
+        path
+        for path in folder.iterdir()
+        if path.is_file() and path.suffix == file_extension
+    ]
 
     # Ensure at least one matching file was found
     if not files:
@@ -175,7 +179,7 @@ def get_files_in_folder(folder: Path, file_extension: str) -> list[Path]:
             f"No files with suffix '{file_extension}' found in folder: {folder}"
         )
 
-    return files
+    return tuple(files)
 
 
 def get_edf_files_in_sleep_data() -> list[Path]:
