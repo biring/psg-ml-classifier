@@ -320,7 +320,7 @@ def load_dataset_from_file(path: str | Path) -> Dataset:
     return ds
 
 
-def load_all_datasets() -> tuple[Dataset, ...]:
+def load_all_datasets(limit: int | None = None) -> tuple[Dataset, ...]:
     """
     Load all Dataset objects from the project's datasets directory.
 
@@ -349,6 +349,10 @@ def load_all_datasets() -> tuple[Dataset, ...]:
         file_extension=const.PICKLE_FILE_EXTENSION,
     )
 
+    # If a limit is specified, slice the list of dataset files to that limit.
+    if limit is not None:
+        dataset_files = dataset_files[:limit]
+
     # Initialize an empty list to store deserialized Dataset instances
     datasets: list[Dataset] = []
 
@@ -365,9 +369,8 @@ def load_all_datasets() -> tuple[Dataset, ...]:
 
 
 if __name__ == "__main__":
-
-    # --- Example usage ---
-    # This will be run as a smoke test to verify the save/load process works end-to-end
+    # --- DEMO / SMOKE TEST ---
+    # This block demonstrates basic functionality and serves as a smoke test.
     import os
 
     sample_subject_id = "_sample_subject_001"  # Example subject ID for testing
@@ -379,17 +382,17 @@ if __name__ == "__main__":
         stats={"sampling_freq": 100.0, "num_bins": 10},
     )
 
-    # read and write dataset to verify round-trip consistency
+    # Test round-trip consistency: save and load the dataset to verify it matches the original
     print("Testing dataset save and load consistency:")
     try:
         print("Write dataset:", write_dataset)
-        # Save and re-load the dataset to verify round-trip.
+        # Save the dataset to disk
         save_dataset_to_file(write_dataset)
 
-        # Build the path used by the saver and loader (same naming convention).
+        # Build the file path using the same naming convention as the saver
         data_set_path: Path = _build_file_path(sample_subject_id, tuple())
 
-        # Load the dataset back from disk and compare.
+        # Load the dataset back from disk and compare with the original
         read_dataset: Dataset = load_dataset_from_file(data_set_path)
         print("Read dataset:", read_dataset)
         if _equals(write_dataset, read_dataset):
@@ -397,23 +400,33 @@ if __name__ == "__main__":
         else:
             raise ValueError("ERROR: Loaded dataset does not match original.")
     finally:
+        # Clean up the test file
         if data_set_path.exists():
             os.remove(data_set_path)
 
-    # writing an existing file name should not overwrite and should print "e"
+    # Test that writing to an existing file does not overwrite (prints "c" for created, "e" for existing)
     print(
         "\nTesting write with existing file (should print 'c' for created and 'e' for existing):"
     )
     try:
-        save_dataset_to_file(write_dataset)  # First write (should create file)
+        save_dataset_to_file(write_dataset)  # First write: creates file (prints "c")
         save_dataset_to_file(
             write_dataset
-        )  # Second write (should detect existing file)
+        )  # Second write: detects existing file (prints "e")
     finally:
+        # Clean up the test file
         if data_set_path.exists():
             os.remove(data_set_path)
 
-    # load all datasets in the datasets directory (will be empty after cleanup, so expect FileNotFoundError)
+    # Test loading all datasets from the datasets directory with and without limit
     print("\n\nTesting loading all datasets from the datasets directory:")
     all_datasets = load_all_datasets()
     print(f"Loaded {len(all_datasets)} datasets")
+
+    # Load only up to the smoke test limit
+    all_datasets = load_all_datasets(const.SMOKE_TEST_DATASET_COUNT)
+    print(f"Loaded {len(all_datasets)} datasets")
+    if len(all_datasets) != const.SMOKE_TEST_DATASET_COUNT:
+        raise ValueError(
+            f"Expected to load {const.SMOKE_TEST_DATASET_COUNT} datasets but loaded {len(all_datasets)}"
+        )
