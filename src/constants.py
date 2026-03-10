@@ -20,6 +20,7 @@ SUBJECT_ID_RANGE = range(0, 66)  # Subject IDs from 0 to 65
 RECORDING_NIGHT = [2]  # Night 2 is considered more complete and consistent for analysis
 
 # --- training constants ---
+SMOKE_TEST_DATASET_COUNT = 10  # Number of datasets to use for the demo/smoke test
 EPOCH_LENGTH_SECONDS = (
     30  # Standard epoch length for sleep staging based on AASM guidelines
 )
