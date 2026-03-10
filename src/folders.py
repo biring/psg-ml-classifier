@@ -1,7 +1,7 @@
 """
 Folder utility module for managing project directory paths and file retrieval.
 
-This module provides utilities for accessing key project directories (sleep data, datasets, reports)
+This module provides utilities for accessing key project directories (sleep data, datasets, artifacts)
 and retrieving specific file types (PSG/EDF files, hypnogram files) from the sleep data directory.
 It includes functions for directory validation, file discovery, EDF-hypnogram pair matching, and
 subject-based file lookup.
@@ -18,8 +18,8 @@ from pathlib import Path
 
 from .constants import (
     # folder constants
+    ARTIFACTS_DIR,
     DATASET_DIR,
-    REPORTS_DIR,
     SLEEP_DATA_DIR,
     # file suffixes
     HYPNOGRAM_FILE_SUFFIX,
@@ -94,28 +94,28 @@ def get_datasets_dir() -> Path:
     return path.resolve()
 
 
-def get_reports_dir() -> Path:
+def get_artifacts_dir() -> Path:
     """
-    Return the path to the reports directory.
+    Return the path to the artifacts directory.
 
-    Retrieves the absolute path to the reports directory located within the project root.
+    Retrieves the absolute path to the artifacts directory located within the project root.
     The directory must exist; if it does not, a FileNotFoundError is raised.
 
     Returns:
-        Path: The absolute path object pointing to the reports directory.
+        Path: The absolute path object pointing to the artifacts directory.
 
     Raises:
-        FileNotFoundError: If the reports directory does not exist at the expected location.
+        FileNotFoundError: If the artifacts directory does not exist at the expected location.
 
     Example:
-        >>> reports_path = get_reports_dir()
-        >>> reports_path.exists()
+        >>> artifacts_path = get_artifacts_dir()
+        >>> artifacts_path.exists()
         True
     """
-    path = _get_project_root() / REPORTS_DIR
+    path = _get_project_root() / ARTIFACTS_DIR
     if not path.exists():
         raise FileNotFoundError(
-            f"Reports directory not found: {path}. Create it manually."
+            f"Artifacts directory not found: {path}. Create it manually."
         )
     return path.resolve()
 
@@ -338,9 +338,9 @@ if __name__ == "__main__":
     print("-" * 60)
     # Display paths to key project directories
     print(f"Project root: {_get_project_root()}")
-    print(f"Sleep data: {get_sleep_data_dir()}")
+    print(f"Artifacts: {get_artifacts_dir()}")
     print(f"Datasets: {get_datasets_dir()}")
-    print(f"Reports: {get_reports_dir()}")
+    print(f"Sleep data: {get_sleep_data_dir()}")
 
     # Print file statistics header
     print("-" * 60)
