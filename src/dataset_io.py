@@ -8,6 +8,7 @@ loading them back, and comparing Dataset instances for equality.
 Key functions:
 - save_dataset_to_file: Save a Dataset to disk in the project's standard format
 - load_dataset_from_file: Load a Dataset from disk
+- load_all_datasets: Load all datasets from the project's datasets directory
 - _save_dataset: Low-level pickle serialization with directory creation
 - _load_dataset: Low-level pickle deserialization
 - _equals: Deep comparison of two Dataset instances
@@ -319,6 +320,50 @@ def load_dataset_from_file(path: str | Path) -> Dataset:
     return ds
 
 
+def load_all_datasets() -> tuple[Dataset, ...]:
+    """
+    Load all Dataset objects from the project's datasets directory.
+
+    Scans the designated datasets folder for all pickle files matching the
+    project's standard file extension and deserializes them into Dataset instances.
+
+    Returns
+    -------
+    tuple[Dataset, ...]
+        A tuple containing all loaded Dataset instances from the datasets directory.
+        Returns an empty tuple if no dataset files are found.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no dataset files are found in the datasets directory.
+
+    Examples
+    --------
+    >>> all_datasets = load_all_datasets()
+    >>> print(f"Loaded {len(all_datasets)} datasets")
+    """
+    # Retrieve all pickle files from the project's datasets directory
+    dataset_files: list[Path] = folder.get_files_in_folder(
+        folder=folder.get_datasets_dir(),
+        file_extension=const.PICKLE_FILE_EXTENSION,
+    )
+
+    # Initialize an empty list to store deserialized Dataset instances
+    datasets: list[Dataset] = []
+
+    # Iterate over each dataset file and deserialize it
+    for file in dataset_files:
+        ds: Dataset = load_dataset_from_file(file)
+        datasets.append(ds)
+
+    if not datasets:
+        raise FileNotFoundError("No dataset files found in the datasets directory.")
+
+    # Convert the list to a tuple and return
+    return tuple(datasets)
+
+
 if __name__ == "__main__":
 
     # --- Example usage ---
@@ -367,3 +412,8 @@ if __name__ == "__main__":
     finally:
         if data_set_path.exists():
             os.remove(data_set_path)
+
+    # load all datasets in the datasets directory (will be empty after cleanup, so expect FileNotFoundError)
+    print("\n\nTesting loading all datasets from the datasets directory:")
+    all_datasets = load_all_datasets()
+    print(f"Loaded {len(all_datasets)} datasets")
