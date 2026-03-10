@@ -3,8 +3,8 @@ This module defines constants used throughout the sleep data analysis pipeline.
 """
 
 # --- folder constants ---
+ARTIFACTS_DIR = "data/artifacts"
 DATASET_DIR = "data/datasets"
-REPORTS_DIR = "data/reports"
 SLEEP_DATA_DIR = "data/physionet-sleep-data"
 
 # --- file extension ---
