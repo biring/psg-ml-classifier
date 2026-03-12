@@ -35,3 +35,7 @@ SLEEP_STAGE_MAP = {
     "Sleep stage ?": "Invalid",
     "Movement time": "Invalid",
 }  # Mapping of original sleep stage labels to simplified categories for machine learning training
+ML_SLEEP_STAGE_LABELS = [
+    "Wake",
+    "Sleep",
+]  # Labels for machine learning training and evaluation
