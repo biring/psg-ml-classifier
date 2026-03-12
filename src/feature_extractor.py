@@ -1,47 +1,60 @@
 """
-Module for extracting features from X numpy arrays and building a Dataset representation.
+Module for extracting features from EEG signals and building a Dataset representation.
+
 This module provides functionality for converting raw EEG signals into feature-extracted
 datasets suitable for machine learning applications. It includes tools for extracting
 time-domain and frequency-domain features from EEG epochs, organizing them into labeled
 datasets, and generating formatted summaries.
+
 Key Components
 --------------
 FrequencyDomainFeatures : dataclass
     Immutable container for FFT-based frequency analysis results, holding power values
     aggregated into equal-width frequency bins along with associated metadata.
+
 Dataset : dataclass
     Immutable container for feature-extracted EEG datasets with labeled epochs,
-    combining both time-domain and frequency-domain features.
+    combining both time-domain and frequency-domain features with metadata and
+    conversion utilities for ML training.
+
 Functions
 ---------
 build_dataset(epochs, labels, sampling_freq_hz, n_bins) -> Dataset
     Main function to build a feature-extracted Dataset from raw EEG epochs.
-    Processes each epoch by extracting time and frequency domain features.
+    Processes each epoch by extracting time and frequency domain features,
+    applies sleep stage label mapping, and filters to ML label set.
+
 format_feature_dataset_summary(ds) -> str
     Generates a formatted, human-readable summary string for a Dataset,
-    including dimensions, metadata, and label distribution statistics.
-_generate_time_domain_features(signal) -> np.ndarray
+    including array shapes, feature dimensions, extraction metadata,
+    and label distribution statistics.
+
+_generate_time_domain_features(signal) -> tuple[np.ndarray, list[str]]
     Extracts 9 time-domain statistical features (mean, std, var, min, max, rms,
     skewness, kurtosis, zero-crossing rate) from a 1D EEG signal.
+
 _generate_frequency_domain_features(signal, fs, n_bins) -> FrequencyDomainFeatures
     Computes frequency-domain power features using FFT and aggregates power across
     equal-width frequency bins from 0 to the Nyquist frequency.
+
 Dependencies
 ------------
-- numpy : for array operations, FFT computation, and numerical calculations
-- dataclasses : for immutable dataclass definitions
+- numpy : array operations, FFT computation, and numerical calculations
+- dataclasses : immutable dataclass definitions
+- constants : ML_SLEEP_STAGE_LABELS and SLEEP_STAGE_MAP for label management
+
 Usage Example
 -------------
 See the ``__main__`` section for a complete example demonstrating how to load
-a sleep session, build a raw dataset, and create a feature-extracted Dataset
+a sleep session, extract raw EEG epochs, and create a feature-extracted Dataset
 with formatted summary output.
-Module for extracting features from X numpy arrays and building a Dataset representation
 """
 
 # --- library imports ---
 import numpy as np
 
 from dataclasses import dataclass
+from .constants import ML_SLEEP_STAGE_LABELS, SLEEP_STAGE_MAP
 
 
 @dataclass(frozen=True)
@@ -400,7 +413,25 @@ def build_dataset(
             time_features,
             frequency_feature.features,
         )
-        processed_epochs.append((feature_x_data, label))
+
+        # Validate epoch label index
+        if not (0 <= label < len(labels)):
+            raise ValueError(f"Epoch label index out of range: {label}")
+
+        # Raw label name from provided labels tuple
+        raw_label_name: str = labels[label]
+
+        # Map raw label name using SLEEP_STAGE_MAP if available, otherwise use raw
+        mapped_label_name: str = SLEEP_STAGE_MAP.get(raw_label_name, raw_label_name)
+
+        # Keep only epochs whose mapped label name is in the ML label set
+        if mapped_label_name not in ML_SLEEP_STAGE_LABELS:
+            # skip this epoch (not part of ML labels)
+            continue
+
+        # Remap label to index within the ML label list
+        remapped_label: int = int(ML_SLEEP_STAGE_LABELS.index(mapped_label_name))
+        processed_epochs.append((feature_x_data, remapped_label))
 
         # Store frequency feature metadata from the first epoch (same for all epochs)
         if count == 0:
@@ -423,7 +454,12 @@ def build_dataset(
         stats["time_feature_dim"] = float(processed_epochs[0][0][0].size)
         stats["frequency_feature_dim"] = float(processed_epochs[0][0][1].size)
 
-    return Dataset(x_epochs=tuple(processed_epochs), y_labels=labels, stats=stats)
+    # Use ML label set as the dataset labels (only epochs from that set were kept)
+    return Dataset(
+        x_epochs=tuple(processed_epochs),
+        y_labels=tuple(ML_SLEEP_STAGE_LABELS),
+        stats=stats,
+    )
 
 
 def format_feature_dataset_summary(ds: Dataset) -> str:
