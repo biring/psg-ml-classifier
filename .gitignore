@@ -2,6 +2,7 @@
 data/artifacts/
 data/datasets/
 data/physionet-sleep-data/
+data/results/
 
 # -- Ignore Python cache and virtual environment files ---
 __pycache__/
@@ -28,3 +29,6 @@ data/reports/
 # --- Ignore planning documents ---
 project_guidelines.md
 workflow.md
+
+# --- IDE-specific files ---
+.idea/
